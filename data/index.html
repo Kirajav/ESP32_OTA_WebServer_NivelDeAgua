@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <title>Servidor ESP32 de Nivel de Agua</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <!-- <meta http-equiv="refresh" content="5"> -->
+    <link rel="stylesheet" type="text/css" href="style.css">
+    <!-- <link rel="icon" href="data:,"> -->
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
+</head>
+
+<body>
+    <div class="topnav">
+        <h1>Sensor de nivel de agua en tinaco de azotea</h1>
+    </div>
+    <div class="content">
+        <div class="card">
+            <h2>Encender Pantalla OLED</h2>
+            <p class="estado">Estado actual (PIN25 y OLED): <span id="valor-estado-oled">%ESTADO_OLED%</span></p>
+            <p><button id="button" class="button">Alternar</button></p>
+        </div>
+        <div>
+            <p><br></p>
+        </div>
+        <div class="card">
+            <h2>Niveles</h2>
+            <p class="estado etiqueta etiqueta-estado-sensor" id="p-mensaje">Conexión con Sensor: <span id="valor-estado-sensor" class="" onchange="formato_estado_sensor()">%ESTADO_SENSOR%</span></p>
+            <p>
+                <i class=" tank material-symbols-outlined"> local_drink </i>
+                <span class="etiqueta etiqueta-litros etiqueta-litros-titulo">Litros:</span>
+                <span id="Litros" class="etiqueta etiqueta-litros etiqueta-litros-data">%LITROS%</span>
+                <sup id="SI-unit" class="etiqueta etiqueta-litros etiqueta-litros-unidad">[L]</sup>
+            </p>
+            <p>
+                <i class="sensor material-symbols-outlined"> detector </i>
+                <span class="etiqueta etiqueta-distancia etiqueta-distancia-titulo">Distancia del sensor al nivel del agua:</span>
+                <span id="Distancia" class="etiqueta etiqueta-distancia etiqueta-distancia-data">%DISTANCIA%</span>
+                <sup id="SI-unit" class="etiqueta etiqueta-distancia etiqueta-distancia-unidad">[cm]</sup>
+            </p>
+            
+                <img id="Imagen" src="/imagen">
+                <br>
+                <span class="nota">Nota: La distancia mínima que puede medir el sensor es de 20cm (18cm realmente), una vez sobrepasado ese límite de medición, los valores que arrojarán serán aleatorios. Debido a esto, se ha establecido a 0[cm] la distancia mínima si hay lecturas menores que 19[cm].<br><br>Vea la página de <a href="/webserial" target="_blank">WebSerial</a> para saber la distancia real y conocer otras funciones.<br><br> Si lo desea, también puede <a href="/update" target="_blank">actualizar</a> el firmware del dispositivo.</span>
+            <p>
+            </p>
+           
+        </div>
+    </div>
+    </div>
+    <script src="/script.js"></script>
+</body>
+
+</html>
