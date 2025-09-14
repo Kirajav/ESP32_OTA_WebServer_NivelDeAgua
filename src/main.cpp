@@ -321,18 +321,22 @@ void toggleDisplayAndLed() {
 
 void otaStart() {
     isUpdating = true;
-    Heltec.display->clear();
-    Heltec.display->display(); // Forzar actualización
+    Heltec.display->clear(); // Limpia el búfer
+    Heltec.display->setColor(BLACK); // Establece el color de dibujo a NEGRO
+    Heltec.display->fillRect(0, 0, 128, 64); // Dibuja el rectángulo para borrar la pantalla
+    Heltec.display->setColor(WHITE); // Restablece el color de dibujo a BLANCO para el texto
     Heltec.display->setFont(ArialMT_Plain_16);
     Heltec.display->setTextAlignment(TEXT_ALIGN_CENTER);
-    Heltec.display->drawString(64, 10, "¡Actualizando!");
+    Heltec.display->drawString(64, 10, "Actualizando...");
     Heltec.display->setFont(ArialMT_Plain_10);
     Heltec.display->drawString(64, 35, "No desconecte.");
-    Heltec.display->clear();
     Heltec.display->display();
+    delay(100); // Pequeña pausa para asegurar que el display se actualice antes de que OTA tome el control.
 }
 
-void otaEnd(bool success) { isUpdating = false; }
+void otaEnd(bool success) {
+    isUpdating = false;
+}
 void otaProgress(size_t, size_t) { Serial.print("."); }
 
 void handleButtonPress() {
@@ -385,13 +389,14 @@ void setup() {
     pinMode(PRG_BUTTON_PIN, INPUT_PULLUP);
     pinMode(LED_PIN, OUTPUT); // Simple pinMode para LED
 
-    Heltec.begin(true, false, true);
+    // La solución definitiva:
+    // 1. Llamamos a Heltec.begin() con el segundo parámetro en 'false' para que NO inicialice el display.
+    Heltec.begin(true /*Serial*/, false /*Display*/, true /*LoRa*/);
+    // 2. Ahora, inicializamos el display manualmente, sin los mensajes de depuración de la librería.
+    Heltec.display->init();
     Heltec.display->flipScreenVertically();
     Heltec.display->setContrast(255);
     Heltec.display->clear();
-    Heltec.display->display(); // Forzar actualización
-
-    initSPIFFS();
     loadConfig();
     updateGlobalsFromConfig();
 
