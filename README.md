@@ -87,3 +87,7 @@ Puedes interactuar con el dispositivo a través de la consola WebSerial disponib
     -   Se añadió una barra de navegación superior para un acceso rápido a las secciones de Inicio, Actualización OTA y WebSerial.
     -   Se implementó un botón de reinicio del dispositivo con un diálogo de confirmación para evitar reinicios accidentales.
     -   Se integraron notificaciones "Toast" para proporcionar feedback visual al usuario sobre las acciones realizadas (ej. reinicio, cambio de estado del display).
+
+-   **Correcciones del Display OLED:**
+    -   Se eliminó el mensaje "OLED init..." que aparecía al iniciar el dispositivo.
+    -   Se solucionó un problema que causaba que la pantalla no se limpiara correctamente al iniciar una actualización OTA, mostrando el mensaje de "Actualizando..." sobre los datos anteriores.
