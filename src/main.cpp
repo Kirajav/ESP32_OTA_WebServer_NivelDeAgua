@@ -208,7 +208,7 @@ void onWebSerialMessage(uint8_t *data, size_t len) {
     };
     for (int i = 0; !lines[i].isEmpty(); ++i) { 
         WebSerial.println(lines[i]);
-        // No es necesario el vTaskDelay aquí, el flush es más efectivo
+        vTaskDelay(10 / portTICK_PERIOD_MS); // Pequeña pausa para evitar saturar el buffer
     }
   } else if (command == "?" || command == "help" || command == "ayuda") {
     String lines[] = {
@@ -230,11 +230,10 @@ void onWebSerialMessage(uint8_t *data, size_t len) {
     };
     for (int i = 0; !lines[i].isEmpty(); ++i) { 
         WebSerial.println(lines[i]);
-        // No es necesario el vTaskDelay aquí, el flush es más efectivo
+        vTaskDelay(10 / portTICK_PERIOD_MS); // Pequeña pausa para evitar saturar el buffer
     }
   }
 
-  ws.cleanupClients(); // Forzar el envío del búfer de WebSocket DESPUÉS de CUALQUIER comando.
 }
 
 void initSPIFFS() { if(!SPIFFS.begin(true)) { Serial.println("Error montando SPIFFS"); } }
@@ -470,7 +469,7 @@ void setup() {
 
 void loop() {
     ElegantOTA.loop();
-    ws.cleanupClients();
+    WebSerial.loop();
     handleButtonPress();
 
     if (isUpdating) {
