@@ -45,7 +45,6 @@ int lastButtonState = HIGH;
 
 // Declaraciones adelantadas de funciones
 String processor(const String& var);
-String processor(const String& var);
 String getImagen();
 String getLitros();
 void initWebSocket();
@@ -147,43 +146,36 @@ String getLitros() {
 }
 
 void initWebSocket() { ws.onEvent(onWebSocketEvent); server.addHandler(&ws); }
-void initWebSerial() { 
-    WebSerial.begin(&server); 
-    WebSerial.onMessage(onWebSerialMessage);
-}
 
-void onWebSerialMessage(uint8_t *data, size_t len) {
-  // La forma más robusta de procesar el comando, inmune a problemas de búfer.
-  String command = String((char*)data).substring(0, len);
-  command.toLowerCase();
-  
-  if (command == "distancia") { // Comandos de una sola línea
-    WebSerial.println("Distancia actual: " + String(distanciaCm) + " cm");
-  } else if (command == "litros") {
-    WebSerial.println("Litros actuales: " + getLitros() + " L");
-  } else if (command == "ip") {
-    WebSerial.println("Dirección IP: " + WiFi.localIP().toString());
-  } else if (command == "submask") {
-    WebSerial.println("Mascara de Subred: " + WiFi.subnetMask().toString());
-  } else if (command == "gateway ip") {
-    WebSerial.println("Gateway IP: " + WiFi.gatewayIP().toString());
-  } else if (command == "dns") {
-    WebSerial.println("DNS 1: " + WiFi.dnsIP(0).toString());
-    WebSerial.println("DNS 2: " + WiFi.dnsIP(1).toString());
-  } else if (command == "mac") {
-    WebSerial.println("Dirección MAC: " + WiFi.macAddress());
-  } else if (command == "display") {
-    WebSerial.println(String("Estado del display: ") + (displayEnabled ? "Encendida" : "Apagada"));
-  } else if (command == "sensor") {
-    WebSerial.println("Estado del sensor: " + mensaje_error);
-  } else if (command == "monitor") {
-    monitorEnabled = !monitorEnabled;
-    if (monitorEnabled) {
-        WebSerial.println("Modo monitor iniciado. Enviando datos cada 5 segundos...");
-    } else {
-        WebSerial.println("Modo monitor detenido.");
-    }
-  } else if (command == "allinfo") { // Comandos de múltiples líneas
+// --- Estructura para el manejo de comandos de WebSerial ---
+typedef void (*CommandHandler)();
+
+struct Command {
+  const char* name;
+  CommandHandler handler;
+};
+
+void handleDistancia() { WebSerial.println("Distancia actual: " + String(distanciaCm) + " cm"); }
+void handleLitros() { WebSerial.println("Litros actuales: " + getLitros() + " L"); }
+void handleIp() { WebSerial.println("Dirección IP: " + WiFi.localIP().toString()); }
+void handleSubmask() { WebSerial.println("Mascara de Subred: " + WiFi.subnetMask().toString()); }
+void handleGateway() { WebSerial.println("Gateway IP: " + WiFi.gatewayIP().toString()); }
+void handleDns() {
+  WebSerial.println("DNS 1: " + WiFi.dnsIP(0).toString());
+  WebSerial.println("DNS 2: " + WiFi.dnsIP(1).toString());
+}
+void handleMac() { WebSerial.println("Dirección MAC: " + WiFi.macAddress()); }
+void handleDisplay() { WebSerial.println(String("Estado del display: ") + (displayEnabled ? "Encendida" : "Apagada")); }
+void handleSensor() { WebSerial.println("Estado del sensor: " + mensaje_error); }
+void handleMonitor() {
+  monitorEnabled = !monitorEnabled;
+  if (monitorEnabled) {
+    WebSerial.println("Modo monitor iniciado. Enviando datos cada 5 segundos...");
+  } else {
+    WebSerial.println("Modo monitor detenido.");
+  }
+}
+void handleAllInfo() {
     String lines[] = {
         "\n+------------------+----------------------------------------+",
         "| CATEGORIA        | VALOR                                  |",
@@ -204,20 +196,21 @@ void onWebSerialMessage(uint8_t *data, size_t len) {
         "| -- Dispositivo --                                       |",
         "| Estado Display   | " + String(displayEnabled ? "Encendida" : "Apagada"),
         "+------------------+----------------------------------------+",
-        "" // Usamos una cadena vacía para marcar el final
+        ""
     };
-    for (int i = 0; !lines[i].isEmpty(); ++i) { 
+    for (int i = 0; !lines[i].isEmpty(); ++i) {
         WebSerial.println(lines[i]);
-        vTaskDelay(10 / portTICK_PERIOD_MS); // Pequeña pausa para evitar saturar el buffer
+        vTaskDelay(10 / portTICK_PERIOD_MS);
     }
-  } else if (command == "?" || command == "help" || command == "ayuda") {
+}
+void handleHelp() {
     String lines[] = {
         "--- Lista de Comandos Disponibles ---",
         "distancia      - Muestra la distancia actual del sensor al agua.",
         "litros         - Muestra la cantidad de litros actual en el tinaco.",
         "ip             - Muestra la dirección IP del dispositivo.",
         "submask        - Muestra la mascara de subred.",
-        "gateway ip     - Muestra la IP del gateway.",
+        "gateway        - Muestra la IP del gateway.",
         "dns            - Muestra las direcciones de los servidores DNS.",
         "mac            - Muestra la dirección MAC del dispositivo.",
         "display        - Muestra el estado actual de la pantalla OLED.",
@@ -226,14 +219,47 @@ void onWebSerialMessage(uint8_t *data, size_t len) {
         "monitor        - Inicia/detiene la impresión continua de datos del sensor.",
         "ayuda, help, ? - Muestra este mensaje de ayuda.",
         "-------------------------------------",
-        "" // Usamos una cadena vacía para marcar el final
+        ""
     };
-    for (int i = 0; !lines[i].isEmpty(); ++i) { 
+    for (int i = 0; !lines[i].isEmpty(); ++i) {
         WebSerial.println(lines[i]);
-        vTaskDelay(10 / portTICK_PERIOD_MS); // Pequeña pausa para evitar saturar el buffer
+        vTaskDelay(10 / portTICK_PERIOD_MS);
+    }
+}
+
+Command commands[] = {
+  {"distancia", &handleDistancia},
+  {"litros", &handleLitros},
+  {"ip", &handleIp},
+  {"submask", &handleSubmask},
+  {"gateway", &handleGateway},
+  {"dns", &handleDns},
+  {"mac", &handleMac},
+  {"display", &handleDisplay},
+  {"sensor", &handleSensor},
+  {"monitor", &handleMonitor},
+  {"allinfo", &handleAllInfo},
+  {"?", &handleHelp},
+  {"help", &handleHelp},
+  {"ayuda", &handleHelp}
+};
+
+void onWebSerialMessage(uint8_t *data, size_t len) {
+  String commandStr = String((char*)data).substring(0, len);
+  commandStr.toLowerCase();
+
+  for (const auto& cmd : commands) {
+    if (commandStr == cmd.name) {
+      cmd.handler();
+      return;
     }
   }
+  WebSerial.println("Comando no reconocido. Escribe 'ayuda' para ver la lista de comandos.");
+}
 
+void initWebSerial() { 
+    WebSerial.begin(&server); 
+    WebSerial.onMessage(onWebSerialMessage);
 }
 
 void initSPIFFS() { if(!SPIFFS.begin(true)) { Serial.println("Error montando SPIFFS"); } }
