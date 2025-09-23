@@ -71,8 +71,15 @@ void SystemStatus::handlePrgButton() {
     if ((millis() - lastDebounceTime) > 50) {
         if (buttonState == LOW) {
             bool currentDisplayState = _configManager->isDisplayOn();
-            setDisplayEnabled(!currentDisplayState);
-            _displayManager->handleDisplayStateChange(!currentDisplayState);
+            bool newDisplayState = !currentDisplayState;
+            setDisplayEnabled(newDisplayState);
+            _displayManager->handleDisplayStateChange(newDisplayState);
+            
+            // Si se está encendiendo el display, resetear el timeout para los 5 minutos
+            if (newDisplayState) {
+                resetOledTimeout();
+            }
+            
             _configManager->saveConfig();
         }
     }

@@ -233,7 +233,7 @@ void AppManager::begin() {
     // The saveWiFiManagerParams() method will be called when the parameters are saved.
 
     const char* AP_SSID = "ESP32_Sensor";
-    const char* AP_PASS = "12345";  // Contraseña simple del 1 al 5
+    const char* AP_PASS = "12345";  // Contraseña del 1 al 5
 
     displayManager.clear();
     displayManager.setFont(ArialMT_Plain_16);
@@ -244,12 +244,12 @@ void AppManager::begin() {
     displayManager.clear();
     displayManager.setFont(ArialMT_Plain_10);
     displayManager.setTextAlignment(TEXT_ALIGN_CENTER);
-    displayManager.drawString(64, 0, F("SENSOR DE NIVEL"));
+    displayManager.drawString(64, 0, F("PORTAL CAPTIVO"));
     displayManager.setTextAlignment(TEXT_ALIGN_LEFT);
-    displayManager.drawString(0, 12, F("Conectando WiFi..."));
+    displayManager.drawString(0, 12, F("Iniciando portal..."));
     displayManager.drawString(0, 22, "SSID: ESP32_Sensor");
-    displayManager.drawString(0, 32, "Pass: RED ABIERTA");
-    displayManager.drawString(0, 42, "IP: 192.168.4.1");
+    displayManager.drawString(0, 32, "Pass: 12345");
+    displayManager.drawString(0, 42, "IP: 192.168.1.1");
     displayManager.display();
     
     // FORZAR MODO PORTAL CAPTIVO DIRECTO - CON CONTRASEÑA SIMPLE
@@ -261,7 +261,24 @@ void AppManager::begin() {
     
     Serial.println("=== FORZANDO PORTAL CAPTIVO DIRECTO ===");
     Serial.println("Saltando autoConnect y iniciando portal captivo directamente");
-    Serial.println("Contraseña: 12345");
+    Serial.print("SSID: ");
+    Serial.println(AP_SSID);
+    Serial.print("Contraseña: ");
+    Serial.println(AP_PASS);
+    Serial.println("Verificando que la contraseña NO sea NULL...");
+    
+    // Verificar que las variables no sean NULL
+    if (AP_SSID == nullptr || AP_PASS == nullptr) {
+        Serial.println("ERROR: SSID o contraseña son NULL!");
+        return;
+    }
+    
+    if (strlen(AP_PASS) == 0) {
+        Serial.println("ERROR: Contraseña está vacía!");
+        return;
+    }
+    
+    Serial.println("Iniciando portal con contraseña...");
     
     // Usar startConfigPortal con contraseña
     if (wifiManager->startConfigPortal(AP_SSID, AP_PASS)) {
