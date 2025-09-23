@@ -2,6 +2,64 @@
 
 Este proyecto para ESP32 mide el nivel de agua en un tanque utilizando un sensor ultrasónico HC-SR04 y muestra los datos en una página web. Ofrece configuración a través de un portal cautivo y actualizaciones de firmware Over-the-Air (OTA).
 
+## 🏗️ REFACTORIZACIÓN MAYOR - Arquitectura POO
+
+### **Migración de Monolítico a Modular**
+Este proyecto ha sido completamente refactorizado de una arquitectura monolítica (main.cpp único de 700+ líneas) a una **arquitectura modular orientada a objetos (POO)** con librerías especializadas.
+
+### **Librerías Creadas**
+
+#### 📋 **AppManager** - Coordinador Principal
+- Gestiona la inicialización y coordinación de todos los componentes
+- Maneja el ciclo de vida de la aplicación
+- Coordina la comunicación entre módulos
+
+#### ⚙️ **ConfigManager** - Gestión de Configuración
+- Persistencia de configuración en JSON (SPIFFS)
+- Valores por defecto y validación
+- Gestión de parámetros del sensor y red
+
+#### 🔬 **SensorFramework** - Framework de Sensores
+- **Framework extensible** para múltiples tipos de sensores
+- **WaterLevelSensor**: Implementación específica para HC-SR04
+- Interfaz unificada para lectura y procesamiento de datos
+
+#### 📱 **DisplayManager** - Control de Pantalla
+- Gestión completa del OLED Heltec
+- Efectos visuales y transiciones
+- Control de encendido/apagado con cuenta regresiva
+
+#### 🌐 **WebManager** - Servidor Web y APIs
+- Servidor web asíncrono
+- APIs REST para datos del sensor
+- Gestión de rutas y endpoints
+
+#### 📊 **SystemStatus** - Monitoreo del Sistema
+- Estados del sistema y componentes
+- Monitoreo de conectividad
+- Gestión de timeouts y eventos
+
+#### 🔄 **OTAUpdater** - Actualizaciones Remotas
+- Actualizaciones Over-the-Air
+- Efectos visuales durante actualización
+- Gestión de progreso y estados
+
+### **Beneficios de la Refactorización**
+
+✅ **Mantenibilidad**: Código organizado en módulos específicos  
+✅ **Escalabilidad**: Fácil agregar nuevos sensores o funcionalidades  
+✅ **Debugging**: Logging granular por componente  
+✅ **Reutilización**: Librerías reutilizables en otros proyectos  
+✅ **Testing**: Cada componente se puede probar independientemente  
+✅ **Separación de responsabilidades**: Cada clase tiene un propósito específico  
+
+### **Estadísticas del Proyecto**
+- **Compilación**: ✅ Exitosa
+- **Flash**: 98.3% utilizado (1,288,445 bytes)
+- **RAM**: 16.4% utilizado (53,776 bytes)
+- **Archivos**: 8 librerías modulares
+- **Líneas de código**: Distribuidas en arquitectura POO
+
 ## Características
 
 -   **Medición de Nivel de Agua:** Utiliza un sensor ultrasónico HC-SR04 para medir la distancia al agua y calcular el volumen restante.
@@ -76,18 +134,47 @@ Puedes interactuar con el dispositivo a través de la consola WebSerial disponib
 
 ## Changelog de esta Versión
 
--   **Robustez en la Configuración:**
-    -   Se eliminó un bucle de reinicios que ocurría en el primer arranque si el archivo `config.json` no existía.
-    -   El sistema ahora crea un `config.json` con valores por defecto de forma segura en el primer arranque.
--   **Corrección de Cálculo de Litros:**
-    -   Se solucionó un error que causaba que el cálculo de litros mostrara "nan" (Not a Number) debido a una posible división por cero.
--   **Mejoras en la Interfaz de Usuario (Frontend):**
-    -   El estado del display OLED (Encendido/Apagado) ahora se muestra correctamente en la página web tan pronto como se carga.
-    -   Se mejoró el diseño de las tarjetas añadiendo un fondo estilizado a los títulos para mejorar la legibilidad y la jerarquía visual.
-    -   Se añadió una barra de navegación superior para un acceso rápido a las secciones de Inicio, Actualización OTA y WebSerial.
-    -   Se implementó un botón de reinicio del dispositivo con un diálogo de confirmación para evitar reinicios accidentales.
-    -   Se integraron notificaciones "Toast" para proporcionar feedback visual al usuario sobre las acciones realizadas (ej. reinicio, cambio de estado del display).
+### 🏗️ **REFACTORIZACIÓN MAYOR - Arquitectura POO**
 
--   **Correcciones del Display OLED:**
-    -   Se eliminó el mensaje "OLED init..." que aparecía al iniciar el dispositivo.
-    -   Se solucionó un problema que causaba que la pantalla no se limpiara correctamente al iniciar una actualización OTA, mostrando el mensaje de "Actualizando..." sobre los datos anteriores.
+#### **Migración Arquitectónica Completa**
+- **Antes**: Código monolítico en un solo `main.cpp` de 700+ líneas
+- **Ahora**: Arquitectura modular POO con 7 librerías especializadas
+
+#### **Correcciones Críticas Resueltas**
+- ✅ **Bucle infinito de reinicios** - Restaurado `ESP.restart()` después del doble reset
+- ✅ **Error de sintaxis** - Corregido regex del hostname en WiFiManager  
+- ✅ **Reconexión WiFi incorrecta** - Solo reconecta cuando realmente se pierde conexión
+- ✅ **Debugging mejorado** - Logging detallado para identificar problema de "0.0 L"
+
+#### **Beneficios Técnicos**
+- **Mantenibilidad**: Código organizado en módulos específicos
+- **Escalabilidad**: Fácil agregar nuevos sensores o funcionalidades
+- **Debugging**: Logging granular por componente
+- **Reutilización**: Librerías reutilizables en otros proyectos
+- **Testing**: Cada componente se puede probar independientemente
+
+#### **Resultados de Compilación**
+- **Flash**: 98.3% utilizado (1,288,445 bytes)
+- **RAM**: 16.4% utilizado (53,776 bytes)
+- **Estado**: ✅ Sin errores de compilación
+- **Arquitectura**: Lista para expansión y mantenimiento
+
+### **Versiones Anteriores**
+
+#### **Robustez en la Configuración:**
+- Se eliminó un bucle de reinicios que ocurría en el primer arranque si el archivo `config.json` no existía.
+- El sistema ahora crea un `config.json` con valores por defecto de forma segura en el primer arranque.
+
+#### **Corrección de Cálculo de Litros:**
+- Se solucionó un error que causaba que el cálculo de litros mostrara "nan" (Not a Number) debido a una posible división por cero.
+
+#### **Mejoras en la Interfaz de Usuario (Frontend):**
+- El estado del display OLED (Encendido/Apagado) ahora se muestra correctamente en la página web tan pronto como se carga.
+- Se mejoró el diseño de las tarjetas añadiendo un fondo estilizado a los títulos para mejorar la legibilidad y la jerarquía visual.
+- Se añadió una barra de navegación superior para un acceso rápido a las secciones de Inicio, Actualización OTA y WebSerial.
+- Se implementó un botón de reinicio del dispositivo con un diálogo de confirmación para evitar reinicios accidentales.
+- Se integraron notificaciones "Toast" para proporcionar feedback visual al usuario sobre las acciones realizadas (ej. reinicio, cambio de estado del display).
+
+#### **Correcciones del Display OLED:**
+- Se eliminó el mensaje "OLED init..." que aparecía al iniciar el dispositivo.
+- Se solucionó un problema que causaba que la pantalla no se limpiara correctamente al iniciar una actualización OTA, mostrando el mensaje de "Actualizando..." sobre los datos anteriores.
