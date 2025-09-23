@@ -134,6 +134,46 @@ Puedes interactuar con el dispositivo a través de la consola WebSerial disponib
 
 ## Changelog de esta Versión
 
+### 🚀 **v2.1.0 - Actualización ElegantOTA + SoftAP Configurable** (Sep 23, 2025)
+
+#### **🔄 Actualización de Librerías**
+- **ElegantOTA**: Actualizado de v3.1.0 → **v3.1.7** (última versión disponible)
+- **ESPAsync_WiFiManager**: Mantenido en v1.15.1 con configuración optimizada
+
+#### **✨ Nuevas Funcionalidades**
+- **SoftAP Configurable**: El nombre y contraseña del punto de acceso WiFi ahora son configurables desde la interfaz web
+- **Configuración Persistente**: Los parámetros del SoftAP se guardan permanentemente en el ConfigManager
+- **Validación de Seguridad**: Contraseñas WPA requieren mínimo 8 caracteres
+
+#### **🎨 Mejoras de Interfaz de Usuario**
+- **Textos Actualizados en Display OLED**:
+  - `"PORTAL ACTIVO"` → `"PORTAL CAUTIVO"`
+  - `"SSID"` → `"RED"`
+  - `"Abre el navegador"` → `"Conecta al WiFi"`
+  - `"Portal activo"` → `"Portal cautivo"` (en mensajes de reconexión)
+- **Valores Dinámicos**: El display ahora muestra los valores reales configurados en lugar de textos hardcodeados
+- **Campos Web**: Agregados campos en WiFiManager para configurar nombre y contraseña del SoftAP
+
+#### **🔧 Correcciones Importantes**
+- **Botón PRG Mejorado**: 
+  - ✅ Toggle pantalla/LED funcionando correctamente
+  - ✅ Mensaje de confirmación "Pantalla ON" al encender
+  - ✅ Countdown mejorado "Apagando pantalla en 3..2..1"
+  - ✅ Sincronización LED blanco con estado de pantalla
+- **Compilación Estable**: Resueltos conflictos de compilación con ESPAsync_WiFiManager v1.15.1
+
+#### **⚙️ Cambios Técnicos**
+- **Configuración de Debug**: `_ESPASYNC_WIFIMGR_LOGLEVEL_=0` para evitar errores de macros
+- **Arquitectura**: Integración de parámetros dinámicos con el sistema POO existente
+- **Compatibilidad**: Mantenida compatibilidad con hardware Heltec WiFi Kit 32
+
+#### **📊 Resultados de Compilación**
+- **Flash**: 98.5% utilizado (1,290,953 bytes)
+- **RAM**: 16.4% utilizado (53,856 bytes)
+- **Estado**: ✅ Compilación exitosa, firmware funcional
+
+---
+
 ### 🏗️ **REFACTORIZACIÓN MAYOR - Arquitectura POO**
 
 #### **Migración Arquitectónica Completa**
