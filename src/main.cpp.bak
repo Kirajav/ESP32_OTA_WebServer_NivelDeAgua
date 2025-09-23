@@ -1,0 +1,385 @@
+#include <Arduino.h>
+#include <WiFi.h>
+#include <heltec.h>
+#include "SPIFFS.h"
+#include <AsyncTCP.h>
+#include <ESPAsyncWebServer.h>
+#define _ESPASYNC_WIFIMGR_LOGLEVEL_    4
+#include <ESPAsync_WiFiManager.h>       
+#include <ESPAsync_WiFiManager-Impl.h>  
+#include <WebSerial.h>
+#include <ElegantOTA.h>
+#include <HCSR04.h>
+#include <ArduinoJson.h>
+
+// --- Definiciones de Hardware y Pines ---
+#define LED_PIN 25          // LED integrado en la placa Heltec
+#define PRG_BUTTON_PIN 0    // Botón "PRG" en la placa Heltec
+#define TRIGGER_PIN 12      // Pin trigger del sensor HC-SR04
+#define ECHO_PIN_1 13       // Pin echo del sensor HC-SR04
+#define Vext 21             // Pin para alimentación del OLED en Heltec V1
+#define OLED_RST 16         // Pin de reset del OLED en Heltec V1
+#define OLED_SDA 4          // Pin SDA del OLED en Heltec V1
+#define OLED_SCL 15         // Pin SCL del OLED en Heltec V1
+
+// --- Parámetros de Configuración (valores por defecto) ---
+double ALTURA_MAX_AGUA_TINACO = 115.0;
+double CAPACIDAD_LITROS_TINACO = 1200.0;
+double DISTANCIA_MINIMA_SENSOR = 19.0;
+
+// --- Variables Globales de Estado ---
+bool ledState = false;
+bool displayEnabled = true;
+double distanciaCm = 0;
+String mensaje_error = "";
+bool monitorEnabled = false;
+bool isUpdating = false;
+
+// --- Temporizadores y Variables de Control ---
+unsigned long previousMillis = 0;
+const long interval = 5000;        // Intervalo de lectura del sensor (5 segundos)
+unsigned long oledStartTime = 0;
+const long oledTimeout = 300000;   // 5 minutos para timeout del OLED
+
+// --- Estructura de Configuración ---
+struct Config {
+    double altura_max;
+    double capacidad;
+    double distancia_min;
+};
+Config config;
+
+// --- Objetos Globales ---
+AsyncWebServer server(80);
+DNSServer dnsServer;
+ESPAsync_WiFiManager wifiManager(&server, &dnsServer);
+AsyncWebSocket ws("/ws");
+UltraSonicDistanceSensor distanceSensor(TRIGGER_PIN, ECHO_PIN_1);
+
+// --- Parámetros de WiFiManager ---
+ESPAsync_WMParameter* custom_altura_max = nullptr;
+ESPAsync_WMParameter* custom_capacidad = nullptr;
+ESPAsync_WMParameter* custom_distancia_min = nullptr;
+
+// --- Declaraciones de funciones ---
+void saveConfig();
+void updateGlobalsFromConfig();
+void initWebSocket();
+void initWebSerial();
+void initSPIFFS();
+
+// --- Función para procesar variables en el HTML ---
+String processor(const String& var) {
+    if (var == "ESTADO_OLED") {
+        return displayEnabled ? "encendida" : "apagada";
+    }
+    if (var == "ESTADO_SENSOR") {
+        return mensaje_error;
+    }
+    if (var == "LITROS") {
+        if (distanciaCm < 0) return "Error";
+        if (distanciaCm <= DISTANCIA_MINIMA_SENSOR) {
+            return String(CAPACIDAD_LITROS_TINACO, 1);
+        }
+        double alturaActualAgua = ALTURA_MAX_AGUA_TINACO - distanciaCm;
+        if (alturaActualAgua < 0) alturaActualAgua = 0;
+        double porcentajeLlenado = (alturaActualAgua / ALTURA_MAX_AGUA_TINACO) * 100.0;
+        if (porcentajeLlenado > 100.0) porcentajeLlenado = 100.0;
+        if (porcentajeLlenado < 0.0) porcentajeLlenado = 0.0;
+        return String((CAPACIDAD_LITROS_TINACO * porcentajeLlenado) / 100.0, 1);
+    }
+    if (var == "DISTANCIA") {
+        return distanciaCm < 0 ? "Error" : String(distanciaCm);
+    }
+    return String();
+}
+
+// --- Manejador de eventos WebSocket ---
+void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type,
+             void *arg, uint8_t *data, size_t len) {
+    switch (type) {
+        case WS_EVT_CONNECT:
+            Serial.printf("WebSocket client #%u connected from %s\n", client->id(), client->remoteIP().toString().c_str());
+            client->text(displayEnabled ? "1" : "0");
+            break;
+        case WS_EVT_DISCONNECT:
+            Serial.printf("WebSocket client #%u disconnected\n", client->id());
+            break;
+        case WS_EVT_DATA: {
+            AwsFrameInfo *info = (AwsFrameInfo*)arg;
+            if (info->final && info->index == 0 && info->len == len && info->opcode == WS_TEXT) {
+                data[len] = 0;
+                String command = (char*)data;
+                if (command == "toggle") {
+                    displayEnabled = !displayEnabled;
+                    if (displayEnabled) {
+                        Heltec.display->displayOn();
+                        oledStartTime = millis();
+                    } else {
+                        Heltec.display->displayOff();
+                    }
+                    saveConfig();
+                    ws.textAll(displayEnabled ? "1" : "0");
+                }
+                else if (command == "reset") {
+                    ws.textAll("restarting");
+                    delay(100);
+                    ESP.restart();
+                }
+            }
+            break;
+        }
+        case WS_EVT_PONG:
+        case WS_EVT_ERROR:
+            break;
+    }
+}
+
+void initWebSocket() {
+    ws.onEvent(onWebSocketEvent);
+    server.addHandler(&ws);
+}
+
+// --- Funciones de Configuración ---
+void saveConfig() {
+    File configFile = SPIFFS.open("/config.json", "w");
+    if (!configFile) {
+        Serial.println(F("Error al abrir config.json para escritura"));
+        return;
+    }
+    
+    StaticJsonDocument<512> doc;
+    doc["altura_max"] = config.altura_max;
+    doc["capacidad"] = config.capacidad;
+    doc["distancia_min"] = config.distancia_min;
+    doc["display_on"] = displayEnabled;
+    
+    if (serializeJson(doc, configFile)) {
+        Serial.println(F("Configuración guardada exitosamente"));
+    } else {
+        Serial.println(F("Error al escribir la configuración"));
+    }
+    configFile.close();
+}
+
+void updateGlobalsFromConfig() {
+    ALTURA_MAX_AGUA_TINACO = config.altura_max;
+    CAPACIDAD_LITROS_TINACO = config.capacidad;
+    DISTANCIA_MINIMA_SENSOR = config.distancia_min;
+}
+
+bool loadConfig() {
+    if (!SPIFFS.begin(true)) {
+        Serial.println(F("Error montando SPIFFS"));
+        return false;
+    }
+
+    File configFile = SPIFFS.open("/config.json", "r");
+    if (!configFile) {
+        Serial.println(F("No se encontró archivo de configuración, usando valores por defecto"));
+        return false;
+    }
+
+    StaticJsonDocument<512> doc;
+    DeserializationError error = deserializeJson(doc, configFile);
+    configFile.close();
+
+    if (error) {
+        Serial.println(F("Error al parsear el archivo de configuración"));
+        return false;
+    }
+
+    config.altura_max = doc["altura_max"] | ALTURA_MAX_AGUA_TINACO;
+    config.capacidad = doc["capacidad"] | CAPACIDAD_LITROS_TINACO;
+    config.distancia_min = doc["distancia_min"] | DISTANCIA_MINIMA_SENSOR;
+    displayEnabled = doc["display_on"] | true;
+
+    updateGlobalsFromConfig();
+    return true;
+}
+
+// --- Callback para guardar parámetros ---
+void saveParamCallback() {
+    Serial.println(F("Callback de guardado de parámetros"));
+    
+    if (custom_altura_max && custom_capacidad && custom_distancia_min) {
+        config.altura_max = atof(custom_altura_max->getValue());
+        config.capacidad = atof(custom_capacidad->getValue());
+        config.distancia_min = atof(custom_distancia_min->getValue());
+        
+        saveConfig();
+        updateGlobalsFromConfig();
+        
+        Serial.println(F("Parámetros guardados:"));
+        Serial.println("Altura máxima: " + String(config.altura_max));
+        Serial.println("Capacidad: " + String(config.capacidad));
+        Serial.println("Distancia mínima: " + String(config.distancia_min));
+    }
+}
+
+void setup() {
+    Serial.begin(115200);
+    Serial.println(F("\nIniciando Sensor de Nivel de Agua..."));
+
+    // Inicialización del hardware
+    pinMode(Vext, OUTPUT);
+    digitalWrite(Vext, LOW);    // Encender OLED
+    delay(100);
+    
+    pinMode(OLED_RST, OUTPUT);
+    digitalWrite(OLED_RST, LOW);
+    delay(50);
+    digitalWrite(OLED_RST, HIGH);
+    delay(50);
+    
+    Wire.begin(OLED_SDA, OLED_SCL);
+    
+    Heltec.begin(true /*DisplayEnable*/, false /*LoRa*/, true /*Serial*/);
+    Heltec.display->init();
+    Heltec.display->flipScreenVertically();
+    Heltec.display->setFont(ArialMT_Plain_10);
+    Heltec.display->clear();
+    
+    // Inicializar SPIFFS y cargar configuración
+    if(!SPIFFS.begin(true)) {
+        Serial.println(F("Error montando SPIFFS"));
+    }
+    loadConfig();
+    
+    // Configurar WiFiManager
+    wifiManager.setDebugOutput(true);
+    wifiManager.setMinimumSignalQuality(-1);
+    
+    // Crear parámetros personalizados
+    custom_altura_max = new ESPAsync_WMParameter(
+        "altura_max", "Altura máxima (cm)", 
+        String(config.altura_max).c_str(), 10);
+    custom_capacidad = new ESPAsync_WMParameter(
+        "capacidad", "Capacidad (L)", 
+        String(config.capacidad).c_str(), 10);
+    custom_distancia_min = new ESPAsync_WMParameter(
+        "distancia_min", "Distancia mínima (cm)", 
+        String(config.distancia_min).c_str(), 10);
+    
+    // Agregar parámetros al WiFiManager
+    wifiManager.addParameter(custom_altura_max);
+    wifiManager.addParameter(custom_capacidad);
+    wifiManager.addParameter(custom_distancia_min);
+    
+    // Configurar callbacks
+    wifiManager.setSaveConfigCallback(saveParamCallback);
+    
+    // Configurar portal cautivo
+    wifiManager.setConfigPortalTimeout(180);
+    wifiManager.setConfigPortalChannel(0);
+    
+    // Mostrar mensaje inicial
+    Heltec.display->clear();
+    Heltec.display->drawString(0, 0, F("Iniciando WiFi..."));
+    Heltec.display->display();
+    
+    // Intentar conectar o iniciar portal cautivo
+    if (!wifiManager.autoConnect("Sensor Tinaco", "12345678")) {
+        Serial.println(F("Fallo en la conexión, reiniciando..."));
+        delay(3000);
+        ESP.restart();
+    }
+    
+    Serial.println(F("Conectado a WiFi!"));
+    Serial.print(F("IP: "));
+    Serial.println(WiFi.localIP());
+    
+    // Inicializar servicios web
+    initWebSocket();
+    initWebSerial();
+    
+    // Configurar rutas del servidor web
+    server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(SPIFFS, "/index.html", "text/html", false, processor);
+    });
+    
+    server.on("/Sensor", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(200, "text/plain", mensaje_error);
+    });
+    
+    server.on("/Litros", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(200, "text/plain", String(getLitros()));
+    });
+    
+    server.on("/Distancia", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(200, "text/plain", String(distanciaCm));
+    });
+    
+    server.on("/toggleDisplay", HTTP_GET, [](AsyncWebServerRequest *request) {
+        displayEnabled = !displayEnabled;
+        if (displayEnabled) {
+            Heltec.display->displayOn();
+            oledStartTime = millis();
+        } else {
+            Heltec.display->displayOff();
+        }
+        saveConfig();
+        request->send(200, "text/plain", displayEnabled ? "Display ON" : "Display OFF");
+    });
+    
+    server.on("/reset", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(200, "text/plain", "Reiniciando...");
+        delay(100);
+        ESP.restart();
+    });
+    
+    // Servir archivos estáticos
+    server.serveStatic("/", SPIFFS, "/");
+    
+    // Inicializar OTA
+    ElegantOTA.begin(&server);
+    
+    // Iniciar servidor
+    server.begin();
+    
+    // Inicializar temporizadores
+    oledStartTime = millis();
+    previousMillis = millis();
+}
+
+void loop() {
+    ws.cleanupClients();
+    unsigned long currentMillis = millis();
+    
+    // Lectura periódica del sensor
+    if (currentMillis - previousMillis >= interval) {
+        previousMillis = currentMillis;
+        
+        float medida = distanceSensor.measureDistanceCm();
+        if (medida >= 0 && medida <= 400) {
+            distanciaCm = medida;
+            mensaje_error = "OK";
+            Serial.printf("Distancia: %.1f cm\n", distanciaCm);
+        } else {
+            mensaje_error = "Error de lectura";
+            Serial.println(F("Error en la lectura del sensor"));
+        }
+        
+        // Actualizar display si está activo
+        if (displayEnabled) {
+            Heltec.display->clear();
+            Heltec.display->setFont(ArialMT_Plain_10);
+            Heltec.display->drawString(0, 0, "IP: " + WiFi.localIP().toString());
+            Heltec.display->drawString(0, 15, "Dist: " + String(distanciaCm, 1) + " cm");
+            Heltec.display->drawString(0, 30, "Litros: " + String(getLitros()) + " L");
+            Heltec.display->display();
+        }
+    }
+    
+    // Control de timeout del display
+    if (displayEnabled && (currentMillis - oledStartTime >= oledTimeout)) {
+        Serial.println(F("Apagando display por timeout"));
+        displayEnabled = false;
+        Heltec.display->displayOff();
+        saveConfig();
+        ws.textAll("0");
+    }
+    
+    // Otras tareas periódicas
+    ElegantOTA.loop();
+}

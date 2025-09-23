@@ -3,7 +3,7 @@
 const double DEFAULT_ALTURA_MAX_AGUA_TINACO = 115.0;
 const double DEFAULT_CAPACIDAD_LITROS_TINACO = 1200.0;
 const double DEFAULT_DISTANCIA_MINIMA_SENSOR = 19.0;
-const char* DEFAULT_HOSTNAME = "ESP32_Sensor_1";
+const char* DEFAULT_HOSTNAME = "ESP32_Sensor";
 const bool DEFAULT_CHECK_UPDATES = true;
 const uint8_t DEFAULT_TIPO_CONTENEDOR = 0; // 0=Tinaco, 1=Cisterna, 2=Contenedor
 
@@ -45,50 +45,100 @@ void ConfigManager::saveConfig() {
 }
 
 bool ConfigManager::loadConfig() {
-    File configFile = SPIFFS.open("/config.json", "r");
-    if (!configFile) {
-        Serial.println(F("No se encontró archivo de configuración, usando valores por defecto"));
-        // Inicializar con valores por defecto si no hay archivo
-        _config.altura_max = DEFAULT_ALTURA_MAX_AGUA_TINACO;
-        _config.capacidad = DEFAULT_CAPACIDAD_LITROS_TINACO;
-        _config.distancia_min = DEFAULT_DISTANCIA_MINIMA_SENSOR;
-        _config.display_on = true; // Por defecto encendido
-        _config.tipo_contenedor = DEFAULT_TIPO_CONTENEDOR;
-        _config.hostname = DEFAULT_HOSTNAME;
-        _config.check_updates = DEFAULT_CHECK_UPDATES;
-        
-        Serial.println("Configuración por defecto:");
-        Serial.println("Altura máxima: " + String(_config.altura_max));
-        Serial.println("Capacidad: " + String(_config.capacidad));
-        Serial.println("Distancia mínima: " + String(_config.distancia_min));
-        
-        saveConfig(); // Guardar la configuración por defecto
+    if (!SPIFFS.begin(true)) {
+        Serial.println("Error al inicializar SPIFFS");
+        setDefaultConfig();
         return false;
     }
 
-    StaticJsonDocument<1024> doc;
-    DeserializationError error = deserializeJson(doc, configFile);
-    configFile.close();
+    if (!SPIFFS.exists(CONFIG_FILE)) {
+        Serial.println("Archivo de configuración no existe");
+        setDefaultConfig();
+        saveConfig(); // Guardar configuración por defecto
+        return false;
+    }
+
+    File file = SPIFFS.open(CONFIG_FILE, "r");
+    if (!file) {
+        Serial.println("Error al abrir archivo de configuración");
+        setDefaultConfig();
+        saveConfig(); // Guardar configuración por defecto
+        return false;
+    }
+
+    String json = file.readString();
+    file.close();
+    
+    Serial.print("JSON leído del archivo: ");
+    Serial.println(json);
+
+    StaticJsonDocument<512> doc;
+    DeserializationError error = deserializeJson(doc, json);
 
     if (error) {
-        Serial.println(F("Error al parsear el archivo de configuración"));
+        Serial.print("Error al parsear JSON: ");
+        Serial.println(error.c_str());
+        setDefaultConfig();
+        saveConfig(); // Guardar configuración por defecto
         return false;
     }
 
+    // Cargar valores con validación
     _config.altura_max = doc["altura_max"] | DEFAULT_ALTURA_MAX_AGUA_TINACO;
     _config.capacidad = doc["capacidad"] | DEFAULT_CAPACIDAD_LITROS_TINACO;
     _config.distancia_min = doc["distancia_min"] | DEFAULT_DISTANCIA_MINIMA_SENSOR;
+    
+    // Validar que los valores no sean 0
+    if (_config.altura_max <= 0) _config.altura_max = DEFAULT_ALTURA_MAX_AGUA_TINACO;
+    if (_config.capacidad <= 0) _config.capacidad = DEFAULT_CAPACIDAD_LITROS_TINACO;
+    if (_config.distancia_min <= 0) _config.distancia_min = DEFAULT_DISTANCIA_MINIMA_SENSOR;
+
+    // Cargar configuraciones del host
+    String loadedHostname = doc["hostname"] | DEFAULT_HOSTNAME;
+    if (loadedHostname.length() > 0) {
+        _config.hostname = loadedHostname;
+    } else {
+        _config.hostname = DEFAULT_HOSTNAME;
+    }
+    
     _config.display_on = doc["display_on"] | true;
-    _config.tipo_contenedor = doc["tipo_contenedor"] | DEFAULT_TIPO_CONTENEDOR;
-    _config.hostname = doc["hostname"] | DEFAULT_HOSTNAME;
     _config.check_updates = doc["check_updates"] | DEFAULT_CHECK_UPDATES;
+    _config.tipo_contenedor = doc["tipo_contenedor"] | DEFAULT_TIPO_CONTENEDOR;
 
-    Serial.println("Configuración cargada desde archivo:");
-    Serial.println("Altura máxima: " + String(_config.altura_max));
-    Serial.println("Capacidad: " + String(_config.capacidad));
-    Serial.println("Distancia mínima: " + String(_config.distancia_min));
-
+    Serial.println("=== CONFIGURACIÓN CARGADA ===");
+    Serial.printf("Altura máxima: %.2f\n", _config.altura_max);
+    Serial.printf("Capacidad: %.2f\n", _config.capacidad);
+    Serial.printf("Distancia mínima: %.2f\n", _config.distancia_min);
+    Serial.printf("Hostname: %s\n", _config.hostname.c_str());
+    Serial.printf("Display: %s\n", _config.display_on ? "ON" : "OFF");
+    Serial.printf("Tipo contenedor: %s\n", TIPOS_CONTENEDOR[_config.tipo_contenedor]);
+    Serial.println("=========================");
+    
+    // Solo guardar configuración si se cargaron valores por defecto
+    if (!SPIFFS.exists("/config.json")) {
+        saveConfig();
+    }
+    
     return true;
+}
+
+void ConfigManager::setDefaultConfig() {
+    _config.altura_max = DEFAULT_ALTURA_MAX_AGUA_TINACO;
+    _config.capacidad = DEFAULT_CAPACIDAD_LITROS_TINACO;
+    _config.distancia_min = DEFAULT_DISTANCIA_MINIMA_SENSOR;
+    _config.hostname = DEFAULT_HOSTNAME;
+    _config.display_on = true;
+    _config.check_updates = DEFAULT_CHECK_UPDATES;
+    _config.tipo_contenedor = DEFAULT_TIPO_CONTENEDOR;
+    
+    Serial.println("=== CONFIGURACIÓN POR DEFECTO ESTABLECIDA ===");
+    Serial.printf("Altura máxima: %.2f\n", _config.altura_max);
+    Serial.printf("Capacidad: %.2f\n", _config.capacidad);
+    Serial.printf("Distancia mínima: %.2f\n", _config.distancia_min);
+    Serial.printf("Hostname: %s\n", _config.hostname.c_str());
+    Serial.printf("Display: %s\n", _config.display_on ? "ON" : "OFF");
+    Serial.printf("Tipo contenedor: %s\n", TIPOS_CONTENEDOR[_config.tipo_contenedor]);
+    Serial.println("========================================");
 }
 
 Config& ConfigManager::getConfig() {

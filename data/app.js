@@ -6,6 +6,7 @@ window.addEventListener("load", () => {
     initWebSocket();
     initButtons();
     startPolling();
+    loadDisplayStatus(); // Cargar estado inicial del display
 });
 
 // --- WebSocket Functions ---
@@ -29,10 +30,33 @@ function onClose(event) {
 
 function onMessage(event) {
     // WebSocket is now only used for pushing display state from server
+    console.log("WebSocket message received:", event.data);
     if (event.data === "1") {
-        document.getElementById("valor-estado-oled").innerHTML = "Encendido";
+        updateDisplayStatus("Encendido");
     } else if (event.data === "0") {
-        document.getElementById("valor-estado-oled").innerHTML = "Apagado";
+        updateDisplayStatus("Apagado");
+    }
+}
+
+// --- Display Status Functions ---
+function loadDisplayStatus() {
+    fetch('/displayStatus')
+        .then(response => response.json())
+        .then(data => {
+            console.log("Display status loaded:", data);
+            updateDisplayStatus(data.status);
+        })
+        .catch(error => {
+            console.error("Error loading display status:", error);
+            updateDisplayStatus("Error");
+        });
+}
+
+function updateDisplayStatus(status) {
+    const statusElement = document.getElementById("valor-estado-oled");
+    if (statusElement) {
+        statusElement.innerHTML = status;
+        console.log("Display status updated to:", status);
     }
 }
 
@@ -50,10 +74,13 @@ function toggleDisplayHandler() {
         .then(state => {
             console.log("New display state:", state);
             showToast(state, 'info');
+            // El estado se actualizará automáticamente vía WebSocket
         })
         .catch(error => {
             console.error("Error toggling display:", error);
             showToast("Error de conexión con el dispositivo", 'error');
+            // Recargar estado en caso de error
+            setTimeout(loadDisplayStatus, 1000);
         });
 }
 
@@ -114,12 +141,65 @@ function showToast(message, type = 'info') {
 // --- Data Polling ---
 function startPolling() {
     const updateData = () => {
-        fetchAndUpdate("/Sensor", "valor-estado-sensor", el => {
-            el.classList.toggle("ok-conexion", el.textContent.includes("OK"));
-            el.classList.toggle("error-conexion", !el.textContent.includes("OK"));
-        });
-        fetchAndUpdate("/Litros", "Litros");
-        fetchAndUpdate("/Distancia", "Distancia");
+        // Fetch sensor data and parse JSON
+        fetch("/Sensor")
+            .then(response => response.ok ? response.text() : Promise.reject('Response not OK'))
+            .then(text => {
+                try {
+                    const sensorData = JSON.parse(text);
+                    
+                    // Update sensor status
+                    const statusEl = document.getElementById("valor-estado-sensor");
+                    if (statusEl) {
+                        statusEl.textContent = sensorData.estado || "Error";
+                        statusEl.classList.toggle("ok-conexion", sensorData.estado === "OK");
+                        statusEl.classList.toggle("error-conexion", sensorData.estado !== "OK");
+                    }
+                    
+                    // Update liters
+                    const litrosEl = document.getElementById("Litros");
+                    if (litrosEl && sensorData.litros !== undefined) {
+                        litrosEl.textContent = sensorData.litros.toFixed(1);
+                    }
+                    
+                    // Update distance
+                    const distanciaEl = document.getElementById("Distancia");
+                    if (distanciaEl && sensorData.distancia_cm !== undefined) {
+                        distanciaEl.textContent = sensorData.distancia_cm.toFixed(1);
+                    }
+                    
+                } catch (error) {
+                    console.error("Error parsing sensor JSON:", error);
+                    console.error("Received text:", text);
+                    
+                    // Fallback: show descriptive error
+                    const statusEl = document.getElementById("valor-estado-sensor");
+                    if (statusEl) {
+                        if (text.includes("Error") || text.includes("error")) {
+                            statusEl.textContent = "Error de sensor";
+                        } else if (text.length > 50) {
+                            statusEl.textContent = "Datos inválidos";
+                        } else {
+                            statusEl.textContent = "Sin comunicación";
+                        }
+                        statusEl.classList.remove("ok-conexion");
+                        statusEl.classList.add("error-conexion");
+                    }
+                }
+            })
+            .catch(error => {
+                console.error("Failed to fetch sensor data:", error);
+                
+                // Show connectivity error
+                const statusEl = document.getElementById("valor-estado-sensor");
+                if (statusEl) {
+                    statusEl.textContent = "Sin conexión";
+                    statusEl.classList.remove("ok-conexion");
+                    statusEl.classList.add("error-conexion");
+                }
+            });
+        
+        // Update image
         document.getElementById("Imagen").src = '/imagen?t=' + new Date().getTime();
     };
     

@@ -46,54 +46,52 @@ String WaterLevelSensor::calculateLitros() const {
         return "Error";
     }
 
-    Serial.println("=== CÁLCULO DE LITROS ===");
-    Serial.print("Distancia medida: ");
-    Serial.println(m_distanciaCm);
-    Serial.print("Altura máxima configurada: ");
-    Serial.println(m_configManager->getAlturaMax());
-    Serial.print("Capacidad configurada: ");
-    Serial.println(m_configManager->getCapacidad());
-    Serial.print("Distancia mínima del sensor: ");
-    Serial.println(m_configManager->getDistanciaMin());
+    // Debug solo cada 10 segundos para reducir spam
+    static unsigned long lastDebugTime = 0;
+    unsigned long currentTime = millis();
+    bool shouldDebug = (currentTime - lastDebugTime) > 10000;
+    
+    if (shouldDebug) {
+        Serial.println("=== CÁLCULO DE LITROS ===");
+        Serial.print("Distancia: ");
+        Serial.print(m_distanciaCm);
+        Serial.print("cm, Litros: ");
+        lastDebugTime = currentTime;
+    }
 
     // Si la distancia es menor o igual a la mínima del sensor, se considera lleno
     if (m_distanciaCm <= m_configManager->getDistanciaMin()) {
-        Serial.println("Contenedor LLENO (distancia <= distancia mínima)");
+        if (shouldDebug) {
+            Serial.println(String(m_configManager->getCapacidad(), 1) + "L (LLENO)");
+        }
         return String(m_configManager->getCapacidad(), 1);
     }
 
     double alturaActualAgua = m_configManager->getAlturaMax() - m_distanciaCm;
-    Serial.print("Altura actual de agua calculada: ");
-    Serial.println(alturaActualAgua);
 
     if (alturaActualAgua < 0) {
         alturaActualAgua = 0;
-        Serial.println("Altura actual ajustada a 0 (contenedor vacío)");
     }
 
     double alturaTotalAgua = m_configManager->getAlturaMax();
-    Serial.print("Altura total del contenedor: ");
-    Serial.println(alturaTotalAgua);
     
     if (alturaTotalAgua <= 0) {
-        Serial.println("ERROR: Altura total <= 0, retornando 0.0");
+        if (shouldDebug) {
+            Serial.println("0.0L (ERROR: Altura total <= 0)");
+        }
         return "0.0";
     }
     
     double porcentajeLlenado = (alturaActualAgua / alturaTotalAgua) * 100.0;
-    Serial.print("Porcentaje de llenado calculado: ");
-    Serial.println(porcentajeLlenado);
     
     if (porcentajeLlenado > 100.0) porcentajeLlenado = 100.0;
     if (porcentajeLlenado < 0.0) porcentajeLlenado = 0.0;
-    
-    Serial.print("Porcentaje de llenado final: ");
-    Serial.println(porcentajeLlenado);
 
     double litros = (m_configManager->getCapacidad() * porcentajeLlenado) / 100.0;
-    Serial.print("Litros calculados: ");
-    Serial.println(litros);
-    Serial.println("=== FIN CÁLCULO ===");
+    
+    if (shouldDebug) {
+        Serial.println(String(litros, 1) + "L (" + String(porcentajeLlenado, 1) + "%)");
+    }
     
     return String(litros, 1);
 }

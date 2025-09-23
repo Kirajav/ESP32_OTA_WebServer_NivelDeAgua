@@ -5,6 +5,8 @@
 #include <ArduinoJson.h>
 #include "SPIFFS.h"
 
+#define CONFIG_FILE "/config.json"
+
 // --- Parámetros de Configuración (valores por defecto) ---
 extern const double DEFAULT_ALTURA_MAX_AGUA_TINACO;
 extern const double DEFAULT_CAPACIDAD_LITROS_TINACO;
@@ -57,6 +59,7 @@ public:
 
 private:
     Config _config;
+    void setDefaultConfig();
 };
 
 #endif // CONFIG_MANAGER_H

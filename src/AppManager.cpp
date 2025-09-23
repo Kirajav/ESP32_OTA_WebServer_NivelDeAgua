@@ -1,4 +1,6 @@
 #include "AppManager.h"
+#include "nvs_flash.h"
+#include "esp_wifi.h"
 #include <Arduino.h>
 #include <WiFi.h>
 #include <heltec.h>
@@ -9,6 +11,7 @@
 #include <ESPAsync_WiFiManager.h>
 #include <ArduinoJson.h>
 #include <ESP_DoubleResetDetector.h>
+#include <nvs_flash.h>
 #include "ConfigManager.h"
 #include "SensorManager.h"
 #include "WaterLevelSensor.h"
@@ -44,11 +47,47 @@ void AppManager::saveConfigCallback() {
     }
 }
 
+void AppManager::configModeCallback(ESPAsync_WiFiManager* myWiFiManager) {
+    Serial.println("=== PORTAL CAPTIVO INICIADO ===");
+    Serial.println("SSID: ESP32_Sensor");
+    Serial.println("Password: 12345");
+    Serial.println("IP: 192.168.1.1");
+    Serial.println("=================================");
+    
+    if (_instance) {
+        // Actualizar pantalla con información del portal
+        _instance->displayManager.clear();
+        _instance->displayManager.setFont(ArialMT_Plain_10);
+        _instance->displayManager.setTextAlignment(TEXT_ALIGN_CENTER);
+        _instance->displayManager.drawString(64, 0, "PORTAL ACTIVO");
+        _instance->displayManager.setTextAlignment(TEXT_ALIGN_LEFT);
+        _instance->displayManager.drawString(0, 12, "SSID: ESP32_Sensor");
+        _instance->displayManager.drawString(0, 22, "Pass: 12345");
+        _instance->displayManager.drawString(0, 32, "IP: 192.168.1.1");
+        _instance->displayManager.drawString(0, 42, "Abre el navegador");
+        _instance->displayManager.display();
+    }
+}
+
 void AppManager::begin() {
     Serial.begin(115200);
     Serial.println(F("\nIniciando Sensor de Nivel de Agua..."));
+    
+    // FORZAR RESET TOTAL DE CREDENCIALES WIFI HASTA QUE FUNCIONE EL PORTAL ABIERTO
+    Serial.println("=== FORZANDO BORRADO TOTAL DE CREDENCIALES WiFi ===");
+    WiFi.mode(WIFI_OFF);
+    delay(100);
+    WiFi.disconnect(true);
+    delay(100);
+    esp_wifi_restore();  // Borra configuración WiFi del ESP32
+    nvs_flash_erase();   // Borra NVS completo
+    nvs_flash_init();    // Reinicia NVS
+    delay(500);
+    
+    // Verificar si la detección de doble reset es correcta
+    bool isDoubleReset = drd.detectDoubleReset();
     Serial.print("Detect Double Reset: ");
-    Serial.println(drd.detectDoubleReset());
+    Serial.println(isDoubleReset);
 
     WiFi.mode(WIFI_STA);
     WiFi.setAutoReconnect(true);
@@ -84,25 +123,63 @@ void AppManager::begin() {
     systemStatus.setMonitorEnabled(true); // Habilitar el monitoreo serial del sensor
     configManager.setDisplayOn(true);     // Forzar el display a estar encendido
     
-    if (drd.detectDoubleReset()) {
-        Serial.println("Doble reset detectado");
+    if (isDoubleReset) {
+        Serial.println("=== DOBLE RESET CONFIRMADO ===");
         displayManager.clear();
         displayManager.setTextAlignment(TEXT_ALIGN_CENTER);
         displayManager.drawString(64, 10, "Modo Config WiFi");
         displayManager.drawString(64, 20, "Borrando config...");
         displayManager.display();
+        
+        // Borrar TODA la configuración
+        WiFi.mode(WIFI_OFF);
+        delay(100);
+        WiFi.disconnect(true);
+        delay(100);
+        esp_wifi_restore();  // Borra configuración WiFi del ESP32
         wifiManager->resetSettings();
+        
+        // Forzar borrado de preferencias
+        nvs_flash_erase();
+        nvs_flash_init();
+        
         delay(2000);
-        ESP.restart(); // Restaurar el restart para evitar el bucle infinito
+        ESP.restart();
+    } else {
+        Serial.println("=== INICIO NORMAL ===");
     }
     
-    // WiFiManager setup
+    // WiFiManager setup - RESET COMPLETO
+    wifiManager->resetSettings();  // Borrar configuraciones del WiFiManager
+    Serial.println("=== Configuraciones WiFiManager borradas ===");
+    
     wifiManager->setDebugOutput(true);
     wifiManager->setMinimumSignalQuality(-1);
     wifiManager->setBreakAfterConfig(false);  // No romper después de guardar configuración
     wifiManager->setSaveConfigCallback(AppManager::saveConfigCallback);
-    wifiManager->setConfigPortalTimeout(180);  // 3 minutos de timeout
-    wifiManager->setConnectTimeout(10000);     // 10 segundos timeout de conexión
+    wifiManager->setConfigPortalTimeout(180);  // 3 minutos de timeout para el portal
+    wifiManager->setConnectTimeout(15000);     // 15 segundos timeout de conexión
+    wifiManager->setAPCallback(AppManager::configModeCallback);
+    
+    // Configuración específica para red abierta
+    wifiManager->setConfigPortalTimeout(300);  // 5 minutos timeout
+    wifiManager->setConnectTimeout(20000);     // 20 segundos timeout
+    
+    // Optimizaciones para estabilidad de red
+    wifiManager->setConfigPortalChannel(6);     // Canal fijo 6 (menos congestionado que 1,11)
+    
+    // Configurar IP personalizada para el SoftAP (volver a 192.168.1.1)
+    IPAddress apIP(192, 168, 1, 1);        // IP del ESP32 como AP
+    IPAddress gateway(192, 168, 1, 1);     // Gateway
+    IPAddress subnet(255, 255, 255, 0);    // Máscara de subred
+    wifiManager->setAPStaticIPConfig(apIP, gateway, subnet);
+    
+    // Configuraciones adicionales para estabilidad
+    WiFi.setTxPower(WIFI_POWER_19_5dBm);   // Potencia media para mejor estabilidad
+    WiFi.setSleep(false);                   // Deshabilitar sleep para mejor latencia
+    
+    Serial.println("=== WiFiManager configurado ===");
+    
     wifiManager->setCustomHeadElement("<style>\n        .networks-list .wifi-name:after {content: ' (Guardada)'; color: green; font-weight: bold;} \n        .panel-title { margin-bottom: 10px; text-align: center; color: #069; } \n        .saved-wifi { background-color: #e8f5e9; border-left: 3px solid #4caf50; } \n        .networks-list { margin-top: 10px; } \n        </style>");
 
     // Títulos de secciones
@@ -155,8 +232,8 @@ void AppManager::begin() {
     // The original setSaveConfigCallback was removed because it was causing a restart.
     // The saveWiFiManagerParams() method will be called when the parameters are saved.
 
-    const char* AP_SSID = "ESP32: Sensor de nivel de agua";
-    const char* AP_PASS = "12345678";
+    const char* AP_SSID = "ESP32_Sensor";
+    const char* AP_PASS = "12345";  // Contraseña simple del 1 al 5
 
     displayManager.clear();
     displayManager.setFont(ArialMT_Plain_16);
@@ -164,41 +241,73 @@ void AppManager::begin() {
     displayManager.drawString(64, 0, F("SENSOR DE"));
     displayManager.drawString(64, 16, F("NIVEL DE AGUA"));
     
+    displayManager.clear();
     displayManager.setFont(ArialMT_Plain_10);
+    displayManager.setTextAlignment(TEXT_ALIGN_CENTER);
+    displayManager.drawString(64, 0, F("SENSOR DE NIVEL"));
     displayManager.setTextAlignment(TEXT_ALIGN_LEFT);
-    displayManager.drawString(0, 35, F("Iniciando WiFi..."));
-    displayManager.drawString(0, 45, "SSID: " + String(AP_SSID));
+    displayManager.drawString(0, 12, F("Conectando WiFi..."));
+    displayManager.drawString(0, 22, "SSID: ESP32_Sensor");
+    displayManager.drawString(0, 32, "Pass: RED ABIERTA");
+    displayManager.drawString(0, 42, "IP: 192.168.4.1");
     displayManager.display();
     
-    if (wifiManager->autoConnect(AP_SSID, AP_PASS)) {
-        Serial.println(F("Conectado a WiFi!"));
+    // FORZAR MODO PORTAL CAPTIVO DIRECTO - CON CONTRASEÑA SIMPLE
+    // Esto evita que intente usar credenciales almacenadas anteriormente
+    displayManager.drawString(0, 22, "SSID: ESP32_Sensor");
+    displayManager.drawString(0, 32, "Pass: 12345");
+    displayManager.drawString(0, 42, "IP: 192.168.1.1");
+    displayManager.display();
+    
+    Serial.println("=== FORZANDO PORTAL CAPTIVO DIRECTO ===");
+    Serial.println("Saltando autoConnect y iniciando portal captivo directamente");
+    Serial.println("Contraseña: 12345");
+    
+    // Usar startConfigPortal con contraseña
+    if (wifiManager->startConfigPortal(AP_SSID, AP_PASS)) {
+        Serial.println(F("=== WiFi CONECTADO desde portal ==="));
+        Serial.print(F("Red: "));
+        Serial.println(WiFi.SSID());
         Serial.print(F("IP: "));
         Serial.println(WiFi.localIP());
         
-        if (WiFi.SSID().length() > 0) {
-            WiFi.setHostname(configManager.getHostname().c_str());
-            Serial.println(F("Guardando configuración WiFi..."));
-            WiFi.setAutoReconnect(true);
-            WiFi.persistent(true);
-            delay(1000);
-        }
+        wifiConnected = true;
+        
+        WiFi.setHostname(configManager.getHostname().c_str());
+        WiFi.setAutoReconnect(true);
+        WiFi.persistent(true);
+        
+        displayManager.clear();
+        displayManager.setTextAlignment(TEXT_ALIGN_CENTER);
+        displayManager.drawString(64, 0, F("WiFi Conectado"));
+        displayManager.setTextAlignment(TEXT_ALIGN_LEFT);
+        displayManager.drawString(0, 15, "Red: " + WiFi.SSID());
+        displayManager.drawString(0, 25, "IP: " + WiFi.localIP().toString());
+        displayManager.drawString(0, 35, "Iniciando servidor...");
+        displayManager.display();
+        delay(2000);
+        
     } else {
-        Serial.println(F("Fallo en la conexión, reiniciando..."));
-        delay(1000);
-        ESP.restart();
+        Serial.println(F("=== Portal captivo terminado ==="));
+        Serial.println(F("Puede que el usuario haya cancelado o timeout"));
+        wifiConnected = false;
+        
+        // El startConfigPortal ya ha manejado la interfaz
+        displayManager.clear();
+        displayManager.setTextAlignment(TEXT_ALIGN_CENTER);
+        displayManager.drawString(64, 0, "PORTAL TERMINADO");
+        displayManager.setTextAlignment(TEXT_ALIGN_LEFT);
+        displayManager.drawString(0, 12, "SSID: ESP32_Sensor");
+        displayManager.drawString(0, 22, "Pass: 12345");
+        displayManager.drawString(0, 32, "IP: 192.168.1.1");
+        displayManager.drawString(0, 42, "Reiniciar para reconfigurar");
+        displayManager.display();
     }
     
-    displayManager.clear();
-    displayManager.setTextAlignment(TEXT_ALIGN_CENTER);
-    displayManager.drawString(64, 0, F("WiFi Conectado"));
-    displayManager.setTextAlignment(TEXT_ALIGN_LEFT);
-    displayManager.drawString(0, 15, "Red: " + WiFi.SSID());
-    displayManager.drawString(0, 25, "IP: " + WiFi.localIP().toString());
-    displayManager.drawString(0, 35, "MAC: " + WiFi.macAddress());
-    displayManager.display();
-    delay(3000);
-    
     webManager->begin();
+    
+    // Configurar callback para reset WiFi
+    webManager->setWiFiResetCallback(AppManager::resetWiFiCallback);
     
     otaUpdater.begin(&server);
     
@@ -249,36 +358,85 @@ void AppManager::loop() {
     //Serial.println("WiFi Status: " + String(WiFi.status()));
     //Serial.println("SystemStatus isMonitorEnabled: " + String(systemStatus.isMonitorEnabled()));
     //Serial.println("ConfigManager isDisplayOn: " + String(configManager.isDisplayOn()));
+    
     otaUpdater.loop();
     systemStatus.loop();
+    
+    // Actualizar efecto fade del LED si está activo
+    displayManager.updateFadeEffect();
+    
     unsigned long currentMillis = millis();
     
-    // Solo intentar reconexión si realmente se perdió la conexión
-    if (WiFi.status() != WL_CONNECTED && (currentMillis - lastWifiRetryMillis >= wifiRetryInterval)) {
-        Serial.println(F("Conexión WiFi perdida, intentando reconexión..."));
+    // Verificar y manejar la conexión WiFi
+    if (WiFi.status() != WL_CONNECTED && wifiConnected) {
+        Serial.println("=== WiFi desconectado ===");
+        wifiConnected = false;
         lastWifiRetryMillis = currentMillis;
-        
-        WiFi.reconnect();
         
         if (configManager.isDisplayOn()) {
             displayManager.clear();
             displayManager.setFont(ArialMT_Plain_10);
             displayManager.setTextAlignment(TEXT_ALIGN_CENTER);
-            displayManager.drawString(64, 10, F("Reconectando"));
-            displayManager.drawString(64, 25, F("WiFi..."));
+            displayManager.drawString(64, 0, F("WiFi perdido"));
+            displayManager.drawString(64, 15, F("Reintentando..."));
+            displayManager.drawString(64, 30, F("Portal activo:"));
+            displayManager.drawString(64, 40, F("ESP32_Sensor"));
+            displayManager.drawString(64, 50, F("192.168.4.1"));
             displayManager.display();
+        }
+    }
+    
+    // Reintento de conexión WiFi cada 5 minutos
+    if (!wifiConnected && (currentMillis - lastWifiRetryMillis >= wifiRetryInterval)) {
+        Serial.println(F("=== Reintentando conexión WiFi ==="));
+        lastWifiRetryMillis = currentMillis;
+        
+        // Intentar reconexión
+        WiFi.reconnect();
+        
+        // Esperar hasta 15 segundos
+        int attempts = 0;
+        while (WiFi.status() != WL_CONNECTED && attempts < 30) {
+            delay(500);
+            attempts++;
+            Serial.print(".");
+        }
+        
+        if (WiFi.status() == WL_CONNECTED) {
+            Serial.println("\n=== WiFi RECONECTADO ===");
+            Serial.print("IP: ");
+            Serial.println(WiFi.localIP());
+            wifiConnected = true;
+            
+            if (configManager.isDisplayOn()) {
+                displayManager.clear();
+                displayManager.setTextAlignment(TEXT_ALIGN_CENTER);
+                displayManager.drawString(64, 0, F("WiFi OK"));
+                displayManager.drawString(64, 20, WiFi.localIP().toString());
+                displayManager.display();
+                delay(2000);
+            }
+        } else {
+            Serial.println("\n=== Falló reconexión ===");
         }
     }
     
     //Serial.println("AppManager::loop() - Checking update interval.");
     if (currentMillis - previousMillis >= interval) {
-        Serial.println("AppManager::loop() - Actualizando sensores...");
+        // Reducir logs solo cada 30 segundos
+        static unsigned long lastVerboseLog = 0;
+        bool shouldLog = (currentMillis - lastVerboseLog) > 30000;
+        
+        if (shouldLog) {
+            Serial.println("AppManager::loop() - Actualizando sensores...");
+            lastVerboseLog = currentMillis;
+        }
+        
         previousMillis = currentMillis;
         
-        Serial.println("Llamando sensorManager.update()...");
         sensorManager.update();
         
-        if (systemStatus.isMonitorEnabled()) {
+        if (systemStatus.isMonitorEnabled() && shouldLog) {
             String sensorJson = sensorManager.getSensorJson("WaterLevel");
             Serial.println("JSON del sensor: " + sensorJson);
         }
@@ -290,7 +448,9 @@ void AppManager::loop() {
             if (!error) {
                 String distancia = doc["distancia_cm"].as<String>();
                 String litros = doc["litros"].as<String>();
-                Serial.println("Actualizando display - Distancia: " + distancia + ", Litros: " + litros);
+                if (shouldLog) {
+                    Serial.println("Actualizando display - Distancia: " + distancia + ", Litros: " + litros);
+                }
                 displayManager.updateDisplay(WiFi.localIP().toString(), distancia, litros);
             } else {
                 Serial.println("Error deserializando JSON del sensor");
@@ -303,5 +463,38 @@ void AppManager::loop() {
         systemStatus.setDisplayEnabled(false);
         displayManager.displayOff();
         configManager.saveConfig();
+    }
+}
+
+void AppManager::resetWiFiFromWeb() {
+    Serial.println("=== RESET WiFi SOLICITADO DESDE WEB ===");
+    
+    // Borrar TODA la configuración WiFi
+    WiFi.mode(WIFI_OFF);
+    delay(100);
+    WiFi.disconnect(true);
+    delay(100);
+    esp_wifi_restore();  // Borra configuración WiFi del ESP32
+    
+    // Borrar configuración del WiFiManager
+    if (wifiManager) {
+        wifiManager->resetSettings();
+        Serial.println("Configuración WiFiManager borrada");
+    }
+    
+    // Forzar borrado de preferencias
+    nvs_flash_erase();
+    nvs_flash_init();
+    
+    Serial.println("Configuración WiFi completamente borrada");
+    Serial.println("Reiniciando para entrar en modo configuración...");
+    delay(1000);
+    ESP.restart();
+}
+
+// Callback estático para reset WiFi
+void AppManager::resetWiFiCallback() {
+    if (_instance) {
+        _instance->resetWiFiFromWeb();
     }
 }
