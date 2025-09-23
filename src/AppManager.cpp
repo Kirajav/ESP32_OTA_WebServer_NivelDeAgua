@@ -49,8 +49,8 @@ void AppManager::saveConfigCallback() {
 
 void AppManager::configModeCallback(ESPAsync_WiFiManager* myWiFiManager) {
     Serial.println("=== PORTAL CAPTIVO INICIADO ===");
-    Serial.println("SSID: ESP32_Sensor");
-    Serial.println("Password: 12345");
+    Serial.println("SSID: " + _instance->configManager.getApSSID());
+    Serial.println("Password: " + _instance->configManager.getApPassword());
     Serial.println("IP: 192.168.1.1");
     Serial.println("=================================");
     
@@ -59,12 +59,12 @@ void AppManager::configModeCallback(ESPAsync_WiFiManager* myWiFiManager) {
         _instance->displayManager.clear();
         _instance->displayManager.setFont(ArialMT_Plain_10);
         _instance->displayManager.setTextAlignment(TEXT_ALIGN_CENTER);
-        _instance->displayManager.drawString(64, 0, "PORTAL ACTIVO");
+        _instance->displayManager.drawString(64, 0, "PORTAL CAUTIVO");
         _instance->displayManager.setTextAlignment(TEXT_ALIGN_LEFT);
-        _instance->displayManager.drawString(0, 12, "SSID: ESP32_Sensor");
-        _instance->displayManager.drawString(0, 22, "Pass: 12345");
+        _instance->displayManager.drawString(0, 12, "RED: " + _instance->configManager.getApSSID());
+        _instance->displayManager.drawString(0, 22, "PASS: " + _instance->configManager.getApPassword());
         _instance->displayManager.drawString(0, 32, "IP: 192.168.1.1");
-        _instance->displayManager.drawString(0, 42, "Abre el navegador");
+        _instance->displayManager.drawString(0, 42, "Conecta al WiFi");
         _instance->displayManager.display();
     }
 }
@@ -220,6 +220,19 @@ void AppManager::begin() {
         configManager.getCheckUpdates() ? "Sí" : "No", 10,
         "required");
         
+    // Agregar sección de configuración del SoftAP
+    wifiManager->addParameter(new ESPAsync_WMParameter("<hr><h3 style='text-align:center'>Configuración del Portal Captivo</h3>"));
+    
+    custom_ap_ssid = new ESPAsync_WMParameter(
+        "ap_ssid", "Nombre de la red del portal captivo", 
+        configManager.getApSSID().c_str(), 32,
+        "placeholder='ESP32_Sensor' minlength='1' maxlength='32' title='Nombre de la red WiFi del portal captivo'");
+        
+    custom_ap_password = new ESPAsync_WMParameter(
+        "ap_password", "Contraseña del portal captivo", 
+        configManager.getApPassword().c_str(), 63,
+        "placeholder='12345678' minlength='8' maxlength='63' title='Contraseña WiFi (8-63 caracteres)'");
+        
     // Agregar parámetros al WiFiManager
     wifiManager->addParameter(custom_tipo_contenedor);
     wifiManager->addParameter(custom_altura_max);
@@ -227,13 +240,16 @@ void AppManager::begin() {
     wifiManager->addParameter(custom_distancia_min);
     wifiManager->addParameter(custom_hostname);
     wifiManager->addParameter(custom_check_updates);
+    wifiManager->addParameter(custom_ap_ssid);
+    wifiManager->addParameter(custom_ap_password);
     
     // Configurar callbacks
     // The original setSaveConfigCallback was removed because it was causing a restart.
     // The saveWiFiManagerParams() method will be called when the parameters are saved.
 
-    const char* AP_SSID = "ESP32_Sensor";
-    const char* AP_PASS = "12345";  // Contraseña del 1 al 5
+    // Obtener SSID y contraseña del SoftAP desde la configuración
+    String AP_SSID = configManager.getApSSID();
+    String AP_PASS = configManager.getApPassword();
 
     displayManager.clear();
     displayManager.setFont(ArialMT_Plain_16);
@@ -247,15 +263,15 @@ void AppManager::begin() {
     displayManager.drawString(64, 0, F("PORTAL CAPTIVO"));
     displayManager.setTextAlignment(TEXT_ALIGN_LEFT);
     displayManager.drawString(0, 12, F("Iniciando portal..."));
-    displayManager.drawString(0, 22, "SSID: ESP32_Sensor");
-    displayManager.drawString(0, 32, "Pass: 12345");
+    displayManager.drawString(0, 22, "RED: " + configManager.getApSSID());
+    displayManager.drawString(0, 32, "PASS: " + configManager.getApPassword());
     displayManager.drawString(0, 42, "IP: 192.168.1.1");
     displayManager.display();
     
     // FORZAR MODO PORTAL CAPTIVO DIRECTO - CON CONTRASEÑA SIMPLE
     // Esto evita que intente usar credenciales almacenadas anteriormente
-    displayManager.drawString(0, 22, "SSID: ESP32_Sensor");
-    displayManager.drawString(0, 32, "Pass: 12345");
+    displayManager.drawString(0, 22, "RED: " + configManager.getApSSID());
+    displayManager.drawString(0, 32, "PASS: " + configManager.getApPassword());
     displayManager.drawString(0, 42, "IP: 192.168.1.1");
     displayManager.display();
     
@@ -268,12 +284,12 @@ void AppManager::begin() {
     Serial.println("Verificando que la contraseña NO sea NULL...");
     
     // Verificar que las variables no sean NULL
-    if (AP_SSID == nullptr || AP_PASS == nullptr) {
-        Serial.println("ERROR: SSID o contraseña son NULL!");
+    if (AP_SSID.length() == 0 || AP_PASS.length() == 0) {
+        Serial.println("ERROR: SSID o contraseña están vacíos!");
         return;
     }
     
-    if (strlen(AP_PASS) == 0) {
+    if (AP_PASS.length() == 0) {
         Serial.println("ERROR: Contraseña está vacía!");
         return;
     }
@@ -281,7 +297,7 @@ void AppManager::begin() {
     Serial.println("Iniciando portal con contraseña...");
     
     // Usar startConfigPortal con contraseña
-    if (wifiManager->startConfigPortal(AP_SSID, AP_PASS)) {
+    if (wifiManager->startConfigPortal(AP_SSID.c_str(), AP_PASS.c_str())) {
         Serial.println(F("=== WiFi CONECTADO desde portal ==="));
         Serial.print(F("Red: "));
         Serial.println(WiFi.SSID());
@@ -314,8 +330,8 @@ void AppManager::begin() {
         displayManager.setTextAlignment(TEXT_ALIGN_CENTER);
         displayManager.drawString(64, 0, "PORTAL TERMINADO");
         displayManager.setTextAlignment(TEXT_ALIGN_LEFT);
-        displayManager.drawString(0, 12, "SSID: ESP32_Sensor");
-        displayManager.drawString(0, 22, "Pass: 12345");
+        displayManager.drawString(0, 12, "RED: " + configManager.getApSSID());
+        displayManager.drawString(0, 22, "PASS: " + configManager.getApPassword());
         displayManager.drawString(0, 32, "IP: 192.168.1.1");
         displayManager.drawString(0, 42, "Reiniciar para reconfigurar");
         displayManager.display();
@@ -337,7 +353,7 @@ void AppManager::saveWiFiManagerParams() {
     Serial.println(F("Callback de guardado de parámetros"));
     
     if (custom_altura_max && custom_capacidad && custom_distancia_min && custom_tipo_contenedor &&
-        custom_hostname && custom_check_updates) {
+        custom_hostname && custom_check_updates && custom_ap_ssid && custom_ap_password) {
         
         configManager.setAlturaMax(atof(custom_altura_max->getValue()));
         configManager.setCapacidad(atof(custom_capacidad->getValue()));
@@ -359,6 +375,10 @@ void AppManager::saveWiFiManagerParams() {
         configManager.setHostname(custom_hostname->getValue());
         configManager.setCheckUpdates(String(custom_check_updates->getValue()) == "Sí");
         
+        // Guardar parámetros del SoftAP
+        configManager.setApSSID(custom_ap_ssid->getValue());
+        configManager.setApPassword(custom_ap_password->getValue());
+        
         configManager.saveConfig();
         
         Serial.println(F("Parámetros guardados:"));
@@ -368,6 +388,8 @@ void AppManager::saveWiFiManagerParams() {
         Serial.println("Distancia mínima: " + String(configManager.getDistanciaMin()));
         Serial.println("Hostname: " + configManager.getHostname());
         Serial.println("Buscar actualizaciones: " + String(configManager.getCheckUpdates() ? "Sí" : "No"));
+        Serial.println("SoftAP SSID: " + configManager.getApSSID());
+        Serial.println("SoftAP Password: " + configManager.getApPassword());
     }
 }
 
@@ -396,8 +418,8 @@ void AppManager::loop() {
             displayManager.setTextAlignment(TEXT_ALIGN_CENTER);
             displayManager.drawString(64, 0, F("WiFi perdido"));
             displayManager.drawString(64, 15, F("Reintentando..."));
-            displayManager.drawString(64, 30, F("Portal activo:"));
-            displayManager.drawString(64, 40, F("ESP32_Sensor"));
+            displayManager.drawString(64, 30, F("Portal cautivo:"));
+            displayManager.drawString(64, 40, configManager.getApSSID());
             displayManager.drawString(64, 50, F("192.168.4.1"));
             displayManager.display();
         }

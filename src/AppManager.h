@@ -8,7 +8,8 @@
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
 #include <ESPAsyncDNSServer.h>
-#define _ESPASYNC_WIFIMGR_LOGLEVEL_    4
+
+#define _ESPASYNC_WIFIMGR_LOGLEVEL_    0
 class ESPAsync_WiFiManager;
 class ESPAsync_WMParameter;
 
@@ -67,6 +68,8 @@ private:
     ESPAsync_WMParameter* custom_distancia_min;
     ESPAsync_WMParameter* custom_hostname;
     ESPAsync_WMParameter* custom_check_updates;
+    ESPAsync_WMParameter* custom_ap_ssid;
+    ESPAsync_WMParameter* custom_ap_password;
 
     void saveWiFiManagerParams();
 

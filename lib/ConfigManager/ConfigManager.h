@@ -24,6 +24,8 @@ struct Config {
     bool check_updates;
     bool display_on; // Estado del display, se guarda aquí
     uint8_t tipo_contenedor; // 0=Tinaco, 1=Cisterna, 2=Contenedor
+    String ap_ssid;  // Nombre del SoftAP
+    String ap_password;  // Contraseña del SoftAP
 };
 
 class ConfigManager {
@@ -56,6 +58,12 @@ public:
     void setTipoContenedor(uint8_t tipo_contenedor);
     uint8_t getTipoContenedor();
     const char* getTipoContenedorStr();
+
+    void setApSSID(const String& ap_ssid);
+    String getApSSID();
+
+    void setApPassword(const String& ap_password);
+    String getApPassword();
 
 private:
     Config _config;

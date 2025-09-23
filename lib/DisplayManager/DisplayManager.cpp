@@ -63,9 +63,16 @@ void DisplayManager::handleDisplayStateChange(bool turnOn) {
     if (turnOn) {
         Heltec.display->displayOn();
         setLedState(true);
+        // Mostrar confirmación de encendido brevemente
+        Heltec.display->clear();
+        Heltec.display->setFont(ArialMT_Plain_16);
+        Heltec.display->setTextAlignment(TEXT_ALIGN_CENTER);
+        Heltec.display->drawString(64, 20, "Pantalla ON");
+        Heltec.display->display();
+        delay(1000);
     } else {
         for (int i = 3; i > 0; i--) {
-            showCountdown("Apagando display", i);
+            showCountdown("Apagando pantalla", i);
             delay(1000);
         }
         Heltec.display->displayOff();
