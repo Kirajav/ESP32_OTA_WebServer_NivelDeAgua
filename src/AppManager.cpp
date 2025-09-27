@@ -1,539 +1,1294 @@
 #include "AppManager.h"
-#include "nvs_flash.h"
-#include "esp_wifi.h"
-#include <Arduino.h>
-#include <WiFi.h>
-#include <heltec.h>
-#include "SPIFFS.h"
-#include <AsyncTCP.h>
-#include <ESPAsyncWebServer.h>
-#include <ESPAsyncDNSServer.h>
-#include <ESPAsync_WiFiManager.h>
+#include <DNSServer.h>
+#include <esp_task_wdt.h>
+#include <esp_system.h>
 #include <ArduinoJson.h>
-#include <ESP_DoubleResetDetector.h>
-#include <nvs_flash.h>
-#include "ConfigManager.h"
-#include "SensorManager.h"
-#include "WaterLevelSensor.h"
-#include "DisplayManager.h"
-#include "WebManager.h"
-#include "SystemStatus.h"
-#include "OTAUpdater.h"
 
-AppManager::AppManager() :
-    drd(DRD_TIMEOUT, DRD_ADDRESS),
-    wifiConnected(false),
-    lastWifiRetryMillis(0),
-    previousMillis(0),
-    server(80),
-    dnsServer(),
-    configManager(),
-    displayManager(),
-    sensorManager(),
-    waterLevelSensor(TRIGGER_PIN, ECHO_PIN_1, &configManager),
-    systemStatus(&displayManager, &configManager),
-    otaUpdater(&displayManager, &systemStatus)
-{
-    _instance = this; // Set the static instance
-    wifiManager = new ESPAsync_WiFiManager(&server, &dnsServer, "TinacoESP");
-    webManager = new WebManager(&server, &sensorManager, &configManager, &displayManager, &systemStatus);
+AsyncWebServer server(80);
+DNSServer dnsServer;
+DoubleResetDetector drd(10, 0);
+
+// Variables para estabilidad del sistema
+static unsigned long lastWiFiScan = 0;
+static const unsigned long WIFI_SCAN_INTERVAL = 10000; // 10 segundos mínimo entre escaneos
+
+// Código de download mode removido - no es necesario
+
+AppManager::AppManager() {
+    Serial.println("AppManager iniciado");
+    wifi_connected = false;
+    portal_active = false;
+    lastDisplayActivity = 0;
+    displaySleeping = false;
+    
+    // Inicializar IoT integrations como nullptr
+    espNowManager = nullptr;
+    googleHome = nullptr;
+    alexa = nullptr;
+    tuya = nullptr;
+    tuyaDevice = nullptr;
+    ntpSync = nullptr;
 }
 
-AppManager* AppManager::_instance = nullptr; // Initialize static member
+void AppManager::initialize() {
+    Serial.println("=== INICIALIZANDO SISTEMA ===");
+    
+    // Configurar watchdog para mayor estabilidad
+    esp_task_wdt_init(30, true); // 30 segundos timeout, panic habilitado
+    esp_task_wdt_add(NULL); // Añadir tarea actual al watchdog
+    
+    Serial.printf("💾 Memoria libre al inicio: %d bytes\n", ESP.getFreeHeap());
+    
+    // ⚡ VERIFICAR DOBLE RESET
+    if (drd.detectDoubleReset()) {
+        Serial.println("🔄 DOBLE RESET DETECTADO - INICIANDO PORTAL CAUTIVO");
+        forcePortalMode = true;
+    } else {
+        Serial.println("✅ Reset normal - Intentando conectar WiFi");
+        forcePortalMode = false;
+    }
+    
+    if (!SPIFFS.begin(true)) {
+        Serial.println("ERROR: SPIFFS falló");
+        return;
+    }
+    
+    // Inicializar ConfigManager
+    if (!config_manager.begin()) {
+        Serial.println("⚠️ Error inicializando ConfigManager, usando defaults");
+    }
+    
+    // Inicializar variables de conexión
+    connectionCheckTimer = 0;
+    checkingConnection = false;
+    
+    display_manager.begin();
+    
+    // Configurar auto-sleep de pantalla (por defecto 30 segundos)
+    uint16_t autoSleepTime = config_manager.getAutoSleepTime();
+    display_manager.setAutoSleepTime(autoSleepTime);
+    Serial.printf("⏰ Auto-sleep configurado: %d segundos\n", autoSleepTime);
+    
+    display_manager.drawString(0, 0, "Iniciando...");
+    display_manager.display();
+    
+    // Inicializar timer de auto-sleep
+    lastDisplayActivity = millis();
+    
+    esp_task_wdt_reset(); // Reset watchdog
+    
+    // 🌊 INICIALIZAR SENSOR REAL (CRÍTICO)
+    Serial.println("🌊 Inicializando sensores reales...");
+    
+    // Usar pines hardcodeados para el sensor HC-SR04 (Heltec WiFi Kit 32)
+    const uint8_t trigPin = 12;  // Pin trigger del sensor HC-SR04
+    const uint8_t echoPin = 13;  // Pin echo del sensor HC-SR04
+    
+    // Crear y registrar sensor de agua
+    WaterLevelSensor* waterSensor = new WaterLevelSensor(trigPin, echoPin, &config_manager);
+    sensor_manager.addSensor(waterSensor);
+    sensor_manager.begin();
+    
+    Serial.printf("✅ Sensor de agua inicializado (Trig: %d, Echo: %d)\n", trigPin, echoPin);
+    
+    initializeNetwork();
+    
+    // Inicializar IoT integrations después de WiFi
+    Serial.println("🌐 Inicializando integraciones IoT...");
+    
+    // NTP Time Sync - PRIMERO para timestamps precisos
+    Serial.println("🕐 Configurando sincronización NTP...");
+    ntpSync = new NTPTimeSync();
+    ntpSync->begin();
+    
+    // ESP-NOW con configuración dinámica
+    Serial.println("🔗 Configurando ESP-NOW...");
+    
+    // Inicializar configuración ESP-NOW con identidad automática
+    config_manager.getESPNowConfig().initialize();
+    
+    // Configurar rol según configuración guardada
+    espNowManager = ESPNowManager::getInstance();
+    if (config_manager.getESPNowConfig().isMaster()) {
+        espNowManager->setMasterMode(true);
+        Serial.printf("👑 Configurado como MASTER - ID: %d, Nombre: %s\n", 
+                      config_manager.getESPNowConfig().getSensorID(),
+                      config_manager.getESPNowConfig().getSensorName().c_str());
+    } else if (config_manager.getESPNowConfig().isSlave()) {
+        espNowManager->setMasterMode(false);
+        Serial.printf("📡 Configurado como SLAVE - ID: %d, Nombre: %s\n", 
+                      config_manager.getESPNowConfig().getSensorID(),
+                      config_manager.getESPNowConfig().getSensorName().c_str());
+    }
+    
+    if (espNowManager->initESPNow()) {
+        Serial.println("✅ ESP-NOW inicializado");
+        
+        // Verificar coexistencia WiFi + ESP-NOW
+        if (WiFi.status() == WL_CONNECTED && WiFi.getMode() == WIFI_AP_STA) {
+            Serial.println("🎯 ¡COEXISTENCIA ACTIVA! WiFi + ESP-NOW funcionando simultáneamente");
+            Serial.printf("   📶 WiFi: %s (%s)\n", WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
+            Serial.printf("   🔗 ESP-NOW: %s (Canal %d)\n", WiFi.macAddress().c_str(), WiFi.channel());
+            Serial.printf("   🆔 Identidad: %s (ID: %d)\n", 
+                          config_manager.getESPNowConfig().getSensorName().c_str(),
+                          config_manager.getESPNowConfig().getSensorID());
+            Serial.println("   ✨ Dispositivo listo para comunicación híbrida");
+        }
+    }
+    
+    // Google Home
+    googleHome = new GoogleHomeIntegration(&sensor_manager);
+    googleHome->init("smart-water-sensor", "esp32-main");
+    googleHome->setEnabled(true);
+    Serial.println("✅ Google Home listo");
+    
+    // Amazon Alexa  
+    alexa = new AlexaIntegration(&sensor_manager);
+    alexa->init("amzn1.ask.skill.water-sensor");
+    alexa->setEnabled(true);
+    Serial.println("✅ Alexa listo");
+    
+    // Tuya Smart (Legacy - para experimentos)
+    tuya = new TuyaIntegration(&sensor_manager);
+    tuya->init("your-key", "your-secret", "esp32-water");
+    tuya->setEnabled(false); // Deshabilitado por defecto
+    Serial.println("✅ Tuya Legacy preparado");
+    
+    // Tuya Device (Commercial Style - ACTIVO)
+    tuyaDevice = new TuyaDevice();
+    TuyaDevice::DeviceConfig config;
+    config.deviceName = "Sensor de Agua Inteligente";
+    config.deviceModel = "ESP32-WLS-V2.0";
+    config.firmwareVersion = "2.0.1";
+    config.type = TuyaDevice::SENSOR;
+    config.category = "cz"; // Water sensor category
+    tuyaDevice->begin(config);
+    Serial.println("🏭 Tuya Device (Commercial) inicializado");
+    
+    Serial.println("🚀 Sistema inicializado COMPLETO con IoT");
+    Serial.printf("💾 Memoria libre tras inicialización: %d bytes\n", ESP.getFreeHeap());
+}
 
-void AppManager::saveConfigCallback() {
-    if (_instance) {
-        _instance->saveWiFiManagerParams();
+void AppManager::initializeNetwork() {
+    if (forcePortalMode) {
+        // 🔄 MODO PORTAL CAUTIVO (Doble Reset)
+        Serial.println("🔄 INICIANDO PORTAL CAUTIVO...");
+        startPortalMode();
+    } else {
+        // ✅ MODO NORMAL - Intentar conectar WiFi
+        Serial.println("🌐 INTENTANDO CONECTAR WIFI PREDETERMINADO...");
+        if (tryConnectWiFi()) {
+            startNormalMode();
+        } else {
+            Serial.println("❌ No se pudo conectar - Iniciando portal cautivo");
+            startPortalMode();
+        }
     }
 }
 
-void AppManager::configModeCallback(ESPAsync_WiFiManager* myWiFiManager) {
-    Serial.println("=== PORTAL CAPTIVO INICIADO ===");
-    Serial.println("SSID: " + _instance->configManager.getApSSID());
-    Serial.println("Password: " + _instance->configManager.getApPassword());
-    Serial.println("IP: 192.168.1.1");
-    Serial.println("=================================");
+void AppManager::startPortalMode() {
+    WiFi.mode(WIFI_AP);
+    WiFi.softAPConfig(IPAddress(192, 168, 1, 1), IPAddress(192, 168, 1, 1), IPAddress(255, 255, 255, 0));
     
-    if (_instance) {
-        // Actualizar pantalla con información del portal
-        _instance->displayManager.clear();
-        _instance->displayManager.setFont(ArialMT_Plain_10);
-        _instance->displayManager.setTextAlignment(TEXT_ALIGN_CENTER);
-        _instance->displayManager.drawString(64, 0, "PORTAL CAUTIVO");
-        _instance->displayManager.setTextAlignment(TEXT_ALIGN_LEFT);
-        _instance->displayManager.drawString(0, 12, "RED: " + _instance->configManager.getApSSID());
-        _instance->displayManager.drawString(0, 22, "PASS: " + _instance->configManager.getApPassword());
-        _instance->displayManager.drawString(0, 32, "IP: 192.168.1.1");
-        _instance->displayManager.drawString(0, 42, "Conecta al WiFi");
-        _instance->displayManager.display();
+    String ap_ssid = config_manager.getAPSSID();
+    String ap_password = config_manager.getAPPassword();
+    
+    bool ap_result = WiFi.softAP(ap_ssid.c_str(), ap_password.c_str());
+    
+    if (ap_result) {
+        Serial.println("✅ PORTAL CAUTIVO ACTIVO");
+        apCallback();
+        
+        // DNS server para portal cautivo
+        dnsServer.start(53, "*", WiFi.softAPIP());
+        Serial.println("📡 DNS Server iniciado");
+        
+        setupWebServer(); // Web server unificado inteligente
+        wifi_connected = false;
+        portal_active = true;
+        Serial.printf("🌐 Portal: http://%s\n", WiFi.softAPIP().toString().c_str());
+    } else {
+        Serial.println("❌ ERROR creando AP");
     }
 }
 
-void AppManager::begin() {
-    Serial.begin(115200);
-    Serial.println(F("\nIniciando Sensor de Nivel de Agua..."));
+bool AppManager::tryConnectWiFi() {
+    NetworkConfig network_config = config_manager.getNetworkConfig();
     
-    // FORZAR RESET TOTAL DE CREDENCIALES WIFI HASTA QUE FUNCIONE EL PORTAL ABIERTO
-    Serial.println("=== FORZANDO BORRADO TOTAL DE CREDENCIALES WiFi ===");
-    WiFi.mode(WIFI_OFF);
-    delay(100);
-    WiFi.disconnect(true);
-    delay(100);
-    esp_wifi_restore();  // Borra configuración WiFi del ESP32
-    nvs_flash_erase();   // Borra NVS completo
-    nvs_flash_init();    // Reinicia NVS
-    delay(500);
+    // Buscar red WiFi predeterminada
+    WiFiNetwork defaultNetwork;
+    bool hasDefault = false;
     
-    // Verificar si la detección de doble reset es correcta
-    bool isDoubleReset = drd.detectDoubleReset();
-    Serial.print("Detect Double Reset: ");
-    Serial.println(isDoubleReset);
+    for (const auto& network : network_config.getWiFiNetworks()) {
+        if (network.is_default) {
+            defaultNetwork = network;
+            hasDefault = true;
+            break;
+        }
+    }
+    
+    if (!hasDefault || defaultNetwork.ssid.length() == 0) {
+        Serial.println("⚠️ No hay WiFi predeterminado configurado");
+        return false;
+    }
+    
+    Serial.printf("🔌 Conectando a: %s\n", defaultNetwork.ssid.c_str());
+    
+    // IMPORTANTE: Mantener modo AP_STA para compatibilidad con ESP-NOW
+    WiFi.mode(WIFI_AP_STA);
+    WiFi.begin(defaultNetwork.ssid.c_str(), defaultNetwork.password.c_str());
+    
+    int attempts = 0;
+    while (WiFi.status() != WL_CONNECTED && attempts < 20) { // 10 segundos max
+        delay(500);
+        Serial.print(".");
+        attempts++;
+        esp_task_wdt_reset();
+    }
+    Serial.println();
+    
+    if (WiFi.status() == WL_CONNECTED) {
+        Serial.printf("✅ WiFi conectado! IP: %s\n", WiFi.localIP().toString().c_str());
+        Serial.printf("📡 Modo WiFi: %s\n", 
+            WiFi.getMode() == WIFI_AP_STA ? "WIFI_AP_STA (Preparado para ESP-NOW)" : 
+            WiFi.getMode() == WIFI_STA ? "WIFI_STA" : "WIFI_AP");
+        return true;
+    } else {
+        Serial.printf("❌ Error conectando WiFi (Estado: %d)\n", WiFi.status());
+        return false;
+    }
+}
 
-    WiFi.mode(WIFI_STA);
-    WiFi.setAutoReconnect(true);
-    WiFi.persistent(true);
+void AppManager::startNormalMode() {
+    wifi_connected = true;
+    portal_active = false;
+    
+    Serial.println("🌊 INICIANDO MODO SENSOR NORMAL");
+    setupWebServer(); // Web server unificado inteligente
+    
+    // Mostrar info en pantalla OLED
+    display_manager.clear();
+    display_manager.setFont(ArialMT_Plain_10);
+    display_manager.drawString(0, 0, "SENSOR ACTIVO");
+    display_manager.drawString(0, 12, "WiFi: " + WiFi.SSID());
+    display_manager.drawString(0, 24, "IP: " + WiFi.localIP().toString());
+    display_manager.drawString(0, 36, "Leyendo sensor...");
+    display_manager.display();
+    
+    // Habilitar auto-sleep
+    display_manager.enableAutoSleep(true);
+}
 
-    WiFi.onEvent([this](WiFiEvent_t event, WiFiEventInfo_t info) {
-        switch(event) {
-            case SYSTEM_EVENT_STA_CONNECTED:
-                Serial.println(F("WiFi Event: CONNECTED"));
-                this->wifiConnected = true;
-                break;
-            case SYSTEM_EVENT_STA_DISCONNECTED:
-                Serial.println(F("WiFi Event: DISCONNECTED"));
-                this->wifiConnected = false;
-                break;
-            case SYSTEM_EVENT_STA_GOT_IP:
-                Serial.println("WiFi Event: GOT IP: " + WiFi.localIP().toString());
-                break;
-            default:
-                Serial.printf("WiFi Event: %d\n", event);
-                break;
+void AppManager::setupWebServer() {
+    Serial.println("🌐 Configurando Web Server Unificado Inteligente...");
+    
+    // ===== ARCHIVOS ESTÁTICOS COMPARTIDOS =====
+    setupStaticFiles();
+    
+    // ===== RUTAS PRINCIPALES INTELIGENTES =====
+    setupSmartRoutes();
+    
+    // ===== RUTAS CONDICIONALES POR MODO =====
+    setupConditionalRoutes();
+    
+    // ===== RUTAS DE DETECCIÓN DE PORTAL CAUTIVO =====
+    setupCaptiveDetectionRoutes();
+    
+    // ===== SERVICIOS ESPECÍFICOS POR MODO =====
+    initializeServices();
+    
+    // ===== INICIALIZAR SERVIDOR =====
+    server.begin();
+    Serial.printf("✅ Web Server iniciado en modo: %s\n", 
+                  portal_active ? "PORTAL CAUTIVO" : "SENSOR NORMAL");
+}
+
+void AppManager::setupStaticFiles() {
+    // Archivos estáticos que siempre están disponibles
+    server.serveStatic("/style.css", SPIFFS, "/style.css");
+    server.serveStatic("/app.js", SPIFFS, "/app.js");
+    
+    // Imágenes del sensor (disponibles en ambos modos)
+    server.serveStatic("/imagen_vacio.jpg", SPIFFS, "/imagen_vacio.jpg", "image/jpeg");
+    server.serveStatic("/imagen_lleno.jpg", SPIFFS, "/imagen_lleno.jpg", "image/jpeg");
+    server.serveStatic("/imagen_error.jpg", SPIFFS, "/imagen_error.jpg", "image/jpeg");
+}
+
+// ===========================================================================
+// WEB SERVER UNIFICADO INTELIGENTE - FUNCIONES ESPECIALIZADAS
+// ===========================================================================
+
+void AppManager::setupSmartRoutes() {
+    Serial.println("🧠 Configurando rutas inteligentes...");
+    
+    // ===== RUTA PRINCIPAL INTELIGENTE "/" =====
+    server.on("/", HTTP_GET, [this](AsyncWebServerRequest *request) {
+        Serial.printf("📄 Petición a ruta principal - Modo: %s\n", 
+                      portal_active ? "PORTAL" : "SENSOR");
+        
+        if (portal_active) {
+            // MODO PORTAL CAUTIVO
+            Serial.println("🌐 Sirviendo portal cautivo");
+            if (SPIFFS.exists("/captive_portal.html")) {
+                request->send(SPIFFS, "/captive_portal.html", "text/html");
+            } else {
+                request->send(500, "text/plain", "❌ Error: Portal cautivo no encontrado");
+            }
+        } else {
+            // MODO SENSOR NORMAL
+            Serial.println("🌊 Sirviendo dashboard del sensor");
+            if (SPIFFS.exists("/index.html")) {
+                request->send(SPIFFS, "/index.html", "text/html");
+            } else {
+                request->send(500, "text/plain", "❌ Error: index.html no encontrado");
+            }
         }
     });
     
-    displayManager.begin();
-    
-    configManager.begin();
-
-    sensorManager.addSensor(&waterLevelSensor);
-    sensorManager.begin();
-    
-    systemStatus.begin();
-    systemStatus.setMonitorEnabled(true); // Habilitar el monitoreo serial del sensor
-    configManager.setDisplayOn(true);     // Forzar el display a estar encendido
-    
-    if (isDoubleReset) {
-        Serial.println("=== DOBLE RESET CONFIRMADO ===");
-        displayManager.clear();
-        displayManager.setTextAlignment(TEXT_ALIGN_CENTER);
-        displayManager.drawString(64, 10, "Modo Config WiFi");
-        displayManager.drawString(64, 20, "Borrando config...");
-        displayManager.display();
-        
-        // Borrar TODA la configuración
-        WiFi.mode(WIFI_OFF);
-        delay(100);
-        WiFi.disconnect(true);
-        delay(100);
-        esp_wifi_restore();  // Borra configuración WiFi del ESP32
-        wifiManager->resetSettings();
-        
-        // Forzar borrado de preferencias
-        nvs_flash_erase();
-        nvs_flash_init();
-        
-        delay(2000);
-        ESP.restart();
-    } else {
-        Serial.println("=== INICIO NORMAL ===");
-    }
-    
-    // WiFiManager setup - RESET COMPLETO
-    wifiManager->resetSettings();  // Borrar configuraciones del WiFiManager
-    Serial.println("=== Configuraciones WiFiManager borradas ===");
-    
-    wifiManager->setDebugOutput(true);
-    wifiManager->setMinimumSignalQuality(-1);
-    wifiManager->setBreakAfterConfig(false);  // No romper después de guardar configuración
-    wifiManager->setSaveConfigCallback(AppManager::saveConfigCallback);
-    wifiManager->setConfigPortalTimeout(180);  // 3 minutos de timeout para el portal
-    wifiManager->setConnectTimeout(15000);     // 15 segundos timeout de conexión
-    wifiManager->setAPCallback(AppManager::configModeCallback);
-    
-    // Configuración específica para red abierta
-    wifiManager->setConfigPortalTimeout(300);  // 5 minutos timeout
-    wifiManager->setConnectTimeout(20000);     // 20 segundos timeout
-    
-    // Optimizaciones para estabilidad de red
-    wifiManager->setConfigPortalChannel(6);     // Canal fijo 6 (menos congestionado que 1,11)
-    
-    // Configurar IP personalizada para el SoftAP (volver a 192.168.1.1)
-    IPAddress apIP(192, 168, 1, 1);        // IP del ESP32 como AP
-    IPAddress gateway(192, 168, 1, 1);     // Gateway
-    IPAddress subnet(255, 255, 255, 0);    // Máscara de subred
-    wifiManager->setAPStaticIPConfig(apIP, gateway, subnet);
-    
-    // Configuraciones adicionales para estabilidad
-    WiFi.setTxPower(WIFI_POWER_19_5dBm);   // Potencia media para mejor estabilidad
-    WiFi.setSleep(false);                   // Deshabilitar sleep para mejor latencia
-    
-    Serial.println("=== WiFiManager configurado ===");
-    
-    wifiManager->setCustomHeadElement("<style>\n        .networks-list .wifi-name:after {content: ' (Guardada)'; color: green; font-weight: bold;} \n        .panel-title { margin-bottom: 10px; text-align: center; color: #069; } \n        .saved-wifi { background-color: #e8f5e9; border-left: 3px solid #4caf50; } \n        .networks-list { margin-top: 10px; } \n        </style>");
-
-    // Títulos de secciones
-    wifiManager->addParameter(new ESPAsync_WMParameter("<hr><h3 style='text-align:center'>Configuración del sensor</h3>"));
-    
-    const char* tipo_actual = configManager.getTipoContenedorStr();
-    custom_tipo_contenedor = new ESPAsync_WMParameter(
-        "tipo_contenedor", "Tipo de contenedor", tipo_actual, 20,
-        "required onchange='this.form.tipo_contenedor.value=this.value' list='tipos_contenedor'");
-    wifiManager->addParameter(new ESPAsync_WMParameter(
-        "<datalist id='tipos_contenedor'>\n        <option value='tinaco'>Tinaco</option>\n        <option value='cisterna'>Cisterna</option>\n        <option value='otro contenedor'>Otro contenedor</option>\n        </datalist>"));
-        
-    custom_altura_max = new ESPAsync_WMParameter(
-        "altura_max", "Altura máxima del nivel del agua en el contenedor (cm)", 
-        String(configManager.getAlturaMax()).c_str(), 10,
-        "required type='number' step='0.1' min='0'");
-        
-    custom_capacidad = new ESPAsync_WMParameter(
-        "capacidad", "Capacidad del contenedor aprox. (L)", 
-        String(configManager.getCapacidad()).c_str(), 10,
-        "required type='number' step='0.1' min='0'");
-        
-    custom_distancia_min = new ESPAsync_WMParameter(
-        "distancia_min", "Distancia mínima que puede leer el sensor (cm)", 
-        String(configManager.getDistanciaMin()).c_str(), 10,
-        "required type='number' step='0.1' min='0'");
-        
-    // Agregar sección de configuración de red
-    wifiManager->addParameter(new ESPAsync_WMParameter("<hr><h3 style='text-align:center'>Configuración de red</h3>"));
-    
-    custom_hostname = new ESPAsync_WMParameter(
-        "hostname", "Nombre del dispositivo en la red", 
-        configManager.getHostname().c_str(), 40,
-        "placeholder='ESP32_Sensor_1' pattern='^[^-\\.]{2,32}$' title='Entre 2 y 32 caracteres sin puntos ni guiones'");
-        
-    custom_check_updates = new ESPAsync_WMParameter(
-        "check_updates", "¿Buscar actualizaciones al iniciar?",
-        configManager.getCheckUpdates() ? "Sí" : "No", 10,
-        "required");
-        
-    // Agregar sección de configuración del SoftAP
-    wifiManager->addParameter(new ESPAsync_WMParameter("<hr><h3 style='text-align:center'>Configuración del Portal Captivo</h3>"));
-    
-    custom_ap_ssid = new ESPAsync_WMParameter(
-        "ap_ssid", "Nombre de la red del portal captivo", 
-        configManager.getApSSID().c_str(), 32,
-        "placeholder='ESP32_Sensor' minlength='1' maxlength='32' title='Nombre de la red WiFi del portal captivo'");
-        
-    custom_ap_password = new ESPAsync_WMParameter(
-        "ap_password", "Contraseña del portal captivo", 
-        configManager.getApPassword().c_str(), 63,
-        "placeholder='12345678' minlength='8' maxlength='63' title='Contraseña WiFi (8-63 caracteres)'");
-        
-    // Agregar parámetros al WiFiManager
-    wifiManager->addParameter(custom_tipo_contenedor);
-    wifiManager->addParameter(custom_altura_max);
-    wifiManager->addParameter(custom_capacidad);
-    wifiManager->addParameter(custom_distancia_min);
-    wifiManager->addParameter(custom_hostname);
-    wifiManager->addParameter(custom_check_updates);
-    wifiManager->addParameter(custom_ap_ssid);
-    wifiManager->addParameter(custom_ap_password);
-    
-    // Configurar callbacks
-    // The original setSaveConfigCallback was removed because it was causing a restart.
-    // The saveWiFiManagerParams() method will be called when the parameters are saved.
-
-    // Obtener SSID y contraseña del SoftAP desde la configuración
-    String AP_SSID = configManager.getApSSID();
-    String AP_PASS = configManager.getApPassword();
-
-    displayManager.clear();
-    displayManager.setFont(ArialMT_Plain_16);
-    displayManager.setTextAlignment(TEXT_ALIGN_CENTER);
-    displayManager.drawString(64, 0, F("SENSOR DE"));
-    displayManager.drawString(64, 16, F("NIVEL DE AGUA"));
-    
-    displayManager.clear();
-    displayManager.setFont(ArialMT_Plain_10);
-    displayManager.setTextAlignment(TEXT_ALIGN_CENTER);
-    displayManager.drawString(64, 0, F("PORTAL CAPTIVO"));
-    displayManager.setTextAlignment(TEXT_ALIGN_LEFT);
-    displayManager.drawString(0, 12, F("Iniciando portal..."));
-    displayManager.drawString(0, 22, "RED: " + configManager.getApSSID());
-    displayManager.drawString(0, 32, "PASS: " + configManager.getApPassword());
-    displayManager.drawString(0, 42, "IP: 192.168.1.1");
-    displayManager.display();
-    
-    // FORZAR MODO PORTAL CAPTIVO DIRECTO - CON CONTRASEÑA SIMPLE
-    // Esto evita que intente usar credenciales almacenadas anteriormente
-    displayManager.drawString(0, 22, "RED: " + configManager.getApSSID());
-    displayManager.drawString(0, 32, "PASS: " + configManager.getApPassword());
-    displayManager.drawString(0, 42, "IP: 192.168.1.1");
-    displayManager.display();
-    
-    Serial.println("=== FORZANDO PORTAL CAPTIVO DIRECTO ===");
-    Serial.println("Saltando autoConnect y iniciando portal captivo directamente");
-    Serial.print("SSID: ");
-    Serial.println(AP_SSID);
-    Serial.print("Contraseña: ");
-    Serial.println(AP_PASS);
-    Serial.println("Verificando que la contraseña NO sea NULL...");
-    
-    // Verificar que las variables no sean NULL
-    if (AP_SSID.length() == 0 || AP_PASS.length() == 0) {
-        Serial.println("ERROR: SSID o contraseña están vacíos!");
-        return;
-    }
-    
-    if (AP_PASS.length() == 0) {
-        Serial.println("ERROR: Contraseña está vacía!");
-        return;
-    }
-    
-    Serial.println("Iniciando portal con contraseña...");
-    
-    // Usar startConfigPortal con contraseña
-    if (wifiManager->startConfigPortal(AP_SSID.c_str(), AP_PASS.c_str())) {
-        Serial.println(F("=== WiFi CONECTADO desde portal ==="));
-        Serial.print(F("Red: "));
-        Serial.println(WiFi.SSID());
-        Serial.print(F("IP: "));
-        Serial.println(WiFi.localIP());
-        
-        wifiConnected = true;
-        
-        WiFi.setHostname(configManager.getHostname().c_str());
-        WiFi.setAutoReconnect(true);
-        WiFi.persistent(true);
-        
-        displayManager.clear();
-        displayManager.setTextAlignment(TEXT_ALIGN_CENTER);
-        displayManager.drawString(64, 0, F("WiFi Conectado"));
-        displayManager.setTextAlignment(TEXT_ALIGN_LEFT);
-        displayManager.drawString(0, 15, "Red: " + WiFi.SSID());
-        displayManager.drawString(0, 25, "IP: " + WiFi.localIP().toString());
-        displayManager.drawString(0, 35, "Iniciando servidor...");
-        displayManager.display();
-        delay(2000);
-        
-    } else {
-        Serial.println(F("=== Portal captivo terminado ==="));
-        Serial.println(F("Puede que el usuario haya cancelado o timeout"));
-        wifiConnected = false;
-        
-        // El startConfigPortal ya ha manejado la interfaz
-        displayManager.clear();
-        displayManager.setTextAlignment(TEXT_ALIGN_CENTER);
-        displayManager.drawString(64, 0, "PORTAL TERMINADO");
-        displayManager.setTextAlignment(TEXT_ALIGN_LEFT);
-        displayManager.drawString(0, 12, "RED: " + configManager.getApSSID());
-        displayManager.drawString(0, 22, "PASS: " + configManager.getApPassword());
-        displayManager.drawString(0, 32, "IP: 192.168.1.1");
-        displayManager.drawString(0, 42, "Reiniciar para reconfigurar");
-        displayManager.display();
-    }
-    
-    webManager->begin();
-    
-    // Configurar callback para reset WiFi
-    webManager->setWiFiResetCallback(AppManager::resetWiFiCallback);
-    
-    otaUpdater.begin(&server);
-    
-    server.begin();
-    
-    previousMillis = millis();
+    // ===== API STATUS INTELIGENTE =====
+    server.on("/api/status", HTTP_GET, [this](AsyncWebServerRequest *request) {
+        String json;
+        if (portal_active) {
+            json = "{\"mode\":\"portal\",\"wifi_connected\":false,\"ap_active\":true,\"ap_ip\":\"" + 
+                   WiFi.softAPIP().toString() + "\"}";
+        } else {
+            json = "{\"mode\":\"sensor\",\"wifi_connected\":true,\"ip\":\"" + 
+                   WiFi.localIP().toString() + "\",\"ssid\":\"" + WiFi.SSID() + "\"}";
+        }
+        request->send(200, "application/json", json);
+    });
 }
 
-void AppManager::saveWiFiManagerParams() {
-    Serial.println(F("Callback de guardado de parámetros"));
+void AppManager::setupConditionalRoutes() {
+    Serial.println("🔀 Configurando rutas condicionales...");
     
-    if (custom_altura_max && custom_capacidad && custom_distancia_min && custom_tipo_contenedor &&
-        custom_hostname && custom_check_updates && custom_ap_ssid && custom_ap_password) {
+    // ===== RUTAS EXCLUSIVAS DEL PORTAL CAUTIVO =====
+    server.on("/scan-wifi", HTTP_GET, [this](AsyncWebServerRequest *request) {
+        if (!portal_active) {
+            request->send(404, "text/plain", "❌ Scan WiFi solo disponible en modo portal");
+            return;
+        }
+        handleScanWiFi(request);
+    });
+    
+    server.on("/wifi-results", HTTP_GET, [this](AsyncWebServerRequest *request) {
+        if (!portal_active) {
+            request->send(404, "text/plain", "❌ WiFi results solo disponible en modo portal");
+            return;
+        }
+        handleWiFiResults(request);
+    });
+    
+    // Endpoint para agregar red WiFi
+    server.on("/api/wifi/add", HTTP_POST, [this](AsyncWebServerRequest *request) {}, NULL, 
+    [this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+        if (!portal_active) {
+            request->send(404, "application/json", "{\"success\":false,\"message\":\"Solo disponible en modo portal\"}");
+            return;
+        }
         
-        configManager.setAlturaMax(atof(custom_altura_max->getValue()));
-        configManager.setCapacidad(atof(custom_capacidad->getValue()));
-        Serial.print(F("Valor de custom_distancia_min->getValue(): "));
-        Serial.println(custom_distancia_min->getValue());
-        configManager.setDistanciaMin(atof(custom_distancia_min->getValue()));
+        String body = "";
+        for (size_t i = 0; i < len; i++) {
+            body += (char)data[i];
+        }
         
-        // Obtener y procesar el tipo de contenedor
-        String tipoStr = String(custom_tipo_contenedor->getValue());
-        tipoStr.toLowerCase();  // Convertir a minúsculas
-        tipoStr.trim();        // Eliminar espacios
+        StaticJsonDocument<200> doc;
+        DeserializationError error = deserializeJson(doc, body);
+        if (error) {
+            request->send(400, "application/json", "{\"success\":false,\"message\":\"JSON inválido\"}");
+            return;
+        }
         
-        if (tipoStr == "tinaco") configManager.setTipoContenedor(0);
-        else if (tipoStr == "cisterna") configManager.setTipoContenedor(1);
-        else if (tipoStr == "otro contenedor") configManager.setTipoContenedor(2);
-        else configManager.setTipoContenedor(0);  // Por defecto
+        String ssid = doc["ssid"].as<String>();
+        String password = doc["password"].as<String>();
+        bool makeDefault = doc["make_default"].as<bool>();
         
-        // Guardar parámetros de red
-        configManager.setHostname(custom_hostname->getValue());
-        configManager.setCheckUpdates(String(custom_check_updates->getValue()) == "Sí");
+        if (ssid.length() == 0 || ssid.length() > 32) {
+            request->send(400, "application/json", "{\"success\":false,\"message\":\"SSID inválido\"}");
+            return;
+        }
         
-        // Guardar parámetros del SoftAP
-        configManager.setApSSID(custom_ap_ssid->getValue());
-        configManager.setApPassword(custom_ap_password->getValue());
+        NetworkConfig& network_config = config_manager.getNetworkConfig();
+        bool success = network_config.addWiFiNetwork(ssid, password, makeDefault);
         
-        configManager.saveConfig();
+        if (success) {
+            config_manager.save();
+            request->send(200, "application/json", "{\"success\":true,\"message\":\"Red agregada exitosamente\"}");
+        } else {
+            request->send(500, "application/json", "{\"success\":false,\"message\":\"Error al agregar la red\"}");
+        }
+    });
+    
+    // Endpoint para obtener redes guardadas
+    server.on("/api/wifi/saved", HTTP_GET, [this](AsyncWebServerRequest *request) {
+        if (!portal_active) {
+            request->send(404, "application/json", "{\"success\":false,\"message\":\"Solo disponible en modo portal\"}");
+            return;
+        }
         
-        Serial.println(F("Parámetros guardados:"));
-        Serial.println("Tipo de contenedor: " + tipoStr);
-        Serial.println("Altura máxima: " + String(configManager.getAlturaMax()));
-        Serial.println("Capacidad: " + String(configManager.getCapacidad()));
-        Serial.println("Distancia mínima: " + String(configManager.getDistanciaMin()));
-        Serial.println("Hostname: " + configManager.getHostname());
-        Serial.println("Buscar actualizaciones: " + String(configManager.getCheckUpdates() ? "Sí" : "No"));
-        Serial.println("SoftAP SSID: " + configManager.getApSSID());
-        Serial.println("SoftAP Password: " + configManager.getApPassword());
+        const NetworkConfig& network_config = config_manager.getNetworkConfig();
+        const auto& networks = network_config.getWiFiNetworks();
+        
+        String json = "{\"success\":true,\"networks\":[";
+        bool first = true;
+        for (const auto& network : networks) {
+            if (!first) json += ",";
+            json += "{\"ssid\":\"" + network.ssid + "\",\"is_default\":" + (network.is_default ? "true" : "false") + "}";
+            first = false;
+        }
+        json += "]}";
+        
+        request->send(200, "application/json", json);
+    });
+    
+    // Endpoint para establecer red predeterminada
+    server.on("/api/wifi/default", HTTP_POST, [this](AsyncWebServerRequest *request) {}, NULL,
+    [this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+        if (!portal_active) {
+            request->send(404, "application/json", "{\"success\":false,\"message\":\"Solo disponible en modo portal\"}");
+            return;
+        }
+        
+        String body = "";
+        for (size_t i = 0; i < len; i++) {
+            body += (char)data[i];
+        }
+        
+        StaticJsonDocument<200> doc;
+        DeserializationError error = deserializeJson(doc, body);
+        if (error) {
+            request->send(400, "application/json", "{\"success\":false,\"message\":\"JSON inválido\"}");
+            return;
+        }
+        
+        String ssid = doc["ssid"].as<String>();
+        NetworkConfig& network_config = config_manager.getNetworkConfig();
+        bool success = network_config.setDefaultWiFiNetwork(ssid);
+        
+        if (success) {
+            config_manager.save();
+            request->send(200, "application/json", "{\"success\":true,\"message\":\"Red predeterminada establecida\"}");
+        } else {
+            request->send(500, "application/json", "{\"success\":false,\"message\":\"Error al establecer red predeterminada\"}");
+        }
+    });
+    
+    // Endpoint para eliminar red WiFi
+    server.on("/api/wifi/remove", HTTP_POST, [this](AsyncWebServerRequest *request) {}, NULL,
+    [this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+        if (!portal_active) {
+            request->send(404, "application/json", "{\"success\":false,\"message\":\"Solo disponible en modo portal\"}");
+            return;
+        }
+        
+        String body = "";
+        for (size_t i = 0; i < len; i++) {
+            body += (char)data[i];
+        }
+        
+        StaticJsonDocument<200> doc;
+        DeserializationError error = deserializeJson(doc, body);
+        if (error) {
+            request->send(400, "application/json", "{\"success\":false,\"message\":\"JSON inválido\"}");
+            return;
+        }
+        
+        String ssid = doc["ssid"].as<String>();
+        NetworkConfig& network_config = config_manager.getNetworkConfig();
+        bool success = network_config.removeWiFiNetwork(ssid);
+        
+        if (success) {
+            config_manager.save();
+            request->send(200, "application/json", "{\"success\":true,\"message\":\"Red eliminada exitosamente\"}");
+        } else {
+            request->send(500, "application/json", "{\"success\":false,\"message\":\"Error al eliminar la red\"}");
+        }
+    });
+    
+    // Endpoint para configuración del sensor
+    server.on("/api/sensor/config", HTTP_POST, [this](AsyncWebServerRequest *request) {}, NULL,
+    [this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+        if (!portal_active) {
+            request->send(404, "application/json", "{\"success\":false,\"message\":\"Solo disponible en modo portal\"}");
+            return;
+        }
+        
+        String body = "";
+        for (size_t i = 0; i < len; i++) {
+            body += (char)data[i];
+        }
+        
+        StaticJsonDocument<512> doc; // Incrementar tamaño para nuevos campos
+        DeserializationError error = deserializeJson(doc, body);
+        if (error) {
+            request->send(400, "application/json", "{\"success\":false,\"message\":\"JSON inválido\"}");
+            return;
+        }
+        
+        // 📏 Configuración básica del sensor
+        if (doc.containsKey("tank_height")) {
+            config_manager.setMaxHeight(doc["tank_height"].as<float>());
+        }
+        if (doc.containsKey("tank_capacity")) {
+            config_manager.setCapacity(doc["tank_capacity"].as<float>());
+        }
+        if (doc.containsKey("min_distance")) {
+            config_manager.setMinDistance(doc["min_distance"].as<float>());
+        }
+        if (doc.containsKey("container_type")) {
+            config_manager.getSensorConfig().setContainerType(doc["container_type"].as<uint8_t>());
+        }
+        
+        // ⏱️ Configuración de intervalos inteligentes
+        if (doc.containsKey("normal_interval")) {
+            uint16_t interval = doc["normal_interval"].as<uint16_t>();
+            if (interval >= 15 && interval <= 300) {
+                config_manager.getSensorConfig().setNormalInterval(interval);
+                Serial.printf("📝 Configurado intervalo normal: %ds\n", interval);
+            }
+        }
+        if (doc.containsKey("filling_interval")) {
+            uint16_t interval = doc["filling_interval"].as<uint16_t>();
+            if (interval >= 3 && interval <= 10) {
+                config_manager.getSensorConfig().setFillingInterval(interval);
+                Serial.printf("📝 Configurado intervalo llenado: %ds\n", interval);
+            }
+        }
+        if (doc.containsKey("filling_threshold")) {
+            uint8_t threshold = doc["filling_threshold"].as<uint8_t>();
+            if (threshold >= 2 && threshold <= 5) {
+                config_manager.getSensorConfig().setFillingThreshold(threshold);
+                Serial.printf("📝 Configurado umbral llenado: %d lecturas\n", threshold);
+            }
+        }
+        
+        // 🌍 Configuración geográfica NTP
+        if (doc.containsKey("auto_geo_location")) {
+            config_manager.getSensorConfig().setAutoGeoLocation(doc["auto_geo_location"].as<bool>());
+        }
+        if (doc.containsKey("timezone")) {
+            String timezone = doc["timezone"].as<String>();
+            if (timezone.length() > 0) {
+                config_manager.getSensorConfig().setTimezone(timezone);
+                Serial.printf("📝 Configurada zona horaria: %s\n", timezone.c_str());
+            }
+        }
+        if (doc.containsKey("show_datetime")) {
+            config_manager.getSensorConfig().setShowDateTime(doc["show_datetime"].as<bool>());
+        }
+        
+        bool success = config_manager.save();
+        if (success) {
+            Serial.println("✅ Configuración del sensor guardada exitosamente");
+            request->send(200, "application/json", "{\"success\":true,\"message\":\"Configuración del sensor guardada exitosamente\"}");
+        } else {
+            Serial.println("❌ Error al guardar configuración del sensor");
+            request->send(500, "application/json", "{\"success\":false,\"message\":\"Error al guardar configuración del sensor\"}");
+        }
+    });
+    
+    // 📊 Endpoint GET para obtener configuración actual del sensor
+    server.on("/api/sensor/config", HTTP_GET, [this](AsyncWebServerRequest *request) {
+        DynamicJsonDocument doc(1024);
+        JsonObject root = doc.to<JsonObject>();
+        
+        const SensorConfig& sensorConfig = config_manager.getSensorConfig();
+        
+        // 📏 Configuración básica
+        root["tank_height"] = config_manager.getMaxHeight();
+        root["tank_capacity"] = config_manager.getCapacity();
+        root["min_distance"] = config_manager.getMinDistance();
+        root["container_type"] = sensorConfig.getContainerTypeAsInt();
+        
+        // ⏱️ Intervalos inteligentes
+        root["normal_interval"] = sensorConfig.getNormalInterval();
+        root["filling_interval"] = sensorConfig.getFillingInterval();
+        root["filling_threshold"] = sensorConfig.getFillingThreshold();
+        
+        // 🌍 Configuración geográfica NTP
+        root["auto_geo_location"] = sensorConfig.getAutoGeoLocation();
+        root["timezone"] = sensorConfig.getTimezone();
+        root["show_datetime"] = sensorConfig.getShowDateTime();
+        
+        // 📊 Estado actual
+        root["success"] = true;
+        
+        String response;
+        serializeJson(doc, response);
+        request->send(200, "application/json", response);
+    });
+    
+    // Endpoint para configuración del AP
+    server.on("/api/ap/config", HTTP_POST, [this](AsyncWebServerRequest *request) {}, NULL,
+    [this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+        if (!portal_active) {
+            request->send(404, "application/json", "{\"success\":false,\"message\":\"Solo disponible en modo portal\"}");
+            return;
+        }
+        
+        String body = "";
+        for (size_t i = 0; i < len; i++) {
+            body += (char)data[i];
+        }
+        
+        StaticJsonDocument<200> doc;
+        DeserializationError error = deserializeJson(doc, body);
+        if (error) {
+            request->send(400, "application/json", "{\"success\":false,\"message\":\"JSON inválido\"}");
+            return;
+        }
+        
+        // Configurar AP
+        if (doc.containsKey("ap_ssid")) {
+            config_manager.setAPSSID(doc["ap_ssid"].as<String>());
+        }
+        if (doc.containsKey("ap_password")) {
+            config_manager.setAPPassword(doc["ap_password"].as<String>());
+        }
+        
+        bool success = config_manager.save();
+        if (success) {
+            request->send(200, "application/json", "{\"success\":true,\"message\":\"Configuración del AP guardada\"}");
+        } else {
+            request->send(500, "application/json", "{\"success\":false,\"message\":\"Error al guardar configuración del AP\"}");
+        }
+    });
+    
+    // Endpoint para configuración del sistema
+    server.on("/api/system/config", HTTP_POST, [this](AsyncWebServerRequest *request) {}, NULL,
+    [this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+        if (!portal_active) {
+            request->send(404, "application/json", "{\"success\":false,\"message\":\"Solo disponible en modo portal\"}");
+            return;
+        }
+        
+        String body = "";
+        for (size_t i = 0; i < len; i++) {
+            body += (char)data[i];
+        }
+        
+        StaticJsonDocument<200> doc;
+        DeserializationError error = deserializeJson(doc, body);
+        if (error) {
+            request->send(400, "application/json", "{\"success\":false,\"message\":\"JSON inválido\"}");
+            return;
+        }
+        
+        // Configurar sistema
+        if (doc.containsKey("auto_sleep_time")) {
+            config_manager.setAutoSleepTime(doc["auto_sleep_time"].as<uint16_t>());
+        }
+        
+        bool success = config_manager.save();
+        if (success) {
+            request->send(200, "application/json", "{\"success\":true,\"message\":\"Configuración del sistema guardada\"}");
+        } else {
+            request->send(500, "application/json", "{\"success\":false,\"message\":\"Error al guardar configuración del sistema\"}");
+        }
+    });
+    
+    // Endpoint para guardar toda la configuración
+    server.on("/api/config/save-all", HTTP_POST, [this](AsyncWebServerRequest *request) {
+        if (!portal_active) {
+            request->send(404, "application/json", "{\"success\":false,\"message\":\"Solo disponible en modo portal\"}");
+            return;
+        }
+        
+        bool success = config_manager.save();
+        if (success) {
+            request->send(200, "application/json", "{\"success\":true,\"message\":\"Toda la configuración guardada exitosamente\"}");
+        } else {
+            request->send(500, "application/json", "{\"success\":false,\"message\":\"Error al guardar la configuración\"}");
+        }
+    });
+    
+    // ===== RUTAS EXCLUSIVAS DEL MODO SENSOR =====
+    server.on("/api/sensor-data", HTTP_GET, [this](AsyncWebServerRequest *request) {
+        if (portal_active) {
+            request->send(404, "text/plain", "❌ Sensor data solo disponible en modo sensor");
+            return;
+        }
+        handleSensorData(request);
+    });
+    
+    server.on("/api/toggle-display", HTTP_POST, [this](AsyncWebServerRequest *request) {
+        if (portal_active) {
+            request->send(404, "text/plain", "❌ Display control solo disponible en modo sensor");
+            return;
+        }
+        handleToggleDisplay(request);
+    });
+    
+    // ===== ENDPOINTS DE ACCIONES =====
+    server.on("/api/save-and-restart", HTTP_POST, [this](AsyncWebServerRequest *request) {
+        Serial.println("🔄 POST /api/save-and-restart");
+        
+        // Guardar toda la configuración antes de reiniciar
+        bool saved = config_manager.save();
+        
+        if (saved) {
+            request->send(200, "application/json", "{\"success\":true,\"message\":\"Configuración guardada. Reiniciando dispositivo...\"}");
+            
+            // Reiniciar después de un delay para enviar la respuesta
+            Serial.println("✅ Configuración guardada. Reiniciando en 2 segundos...");
+            delay(2000);
+            ESP.restart();
+        } else {
+            request->send(500, "application/json", "{\"success\":false,\"message\":\"Error al guardar la configuración\"}");
+        }
+    });
+    
+    server.on("/api/restart", HTTP_POST, [this](AsyncWebServerRequest *request) {
+        Serial.println("🔄 POST /api/restart");
+        
+        request->send(200, "application/json", "{\"success\":true,\"message\":\"Reiniciando dispositivo...\"}");
+        
+        // Reiniciar después de un delay para enviar la respuesta
+        Serial.println("🔄 Reiniciando dispositivo en 2 segundos...");
+        delay(2000);
+        ESP.restart();
+    });
+    
+    server.on("/api/factory-reset", HTTP_POST, [this](AsyncWebServerRequest *request) {
+        Serial.println("🗑️ POST /api/factory-reset");
+        
+        // Borrar toda la configuración
+        config_manager.reset();
+        bool reset = config_manager.save();
+        
+        if (reset) {
+            request->send(200, "application/json", "{\"success\":true,\"message\":\"Reset de fábrica completado. Reiniciando...\"}");
+            
+            // Reiniciar después de un delay para enviar la respuesta
+            Serial.println("✅ Reset de fábrica completado. Reiniciando en 3 segundos...");
+            delay(3000);
+            ESP.restart();
+        } else {
+            request->send(500, "application/json", "{\"success\":false,\"message\":\"Error al realizar reset de fábrica\"}");
+        }
+    });
+}
+
+void AppManager::setupCaptiveDetectionRoutes() {
+    Serial.println("📡 Configurando detección de portal cautivo...");
+    
+    // ===== DETECCIÓN ANDROID =====
+    server.on("/generate_204", HTTP_GET, [this](AsyncWebServerRequest *request) {
+        Serial.println("📱 Android detectó portal cautivo: /generate_204");
+        if (portal_active) {
+            request->send(200, "text/html", "<script>window.location.href='/';</script>");
+        } else {
+            request->send(204); // No content en modo sensor
+        }
+    });
+    
+    server.on("/gen_204", HTTP_GET, [this](AsyncWebServerRequest *request) {
+        Serial.println("📱 Android detectó portal cautivo: /gen_204");
+        if (portal_active) {
+            request->send(200, "text/html", "<script>window.location.href='/';</script>");
+        } else {
+            request->send(204);
+        }
+    });
+    
+    // ===== DETECCIÓN iOS =====
+    server.on("/hotspot-detect.html", HTTP_GET, [this](AsyncWebServerRequest *request) {
+        Serial.println("🍎 iOS detectó portal cautivo: /hotspot-detect.html");
+        if (portal_active) {
+            request->send(200, "text/html", "<script>window.location.href='/';</script>");
+        } else {
+            request->send(200, "text/html", "<html><body>Success</body></html>");
+        }
+    });
+    
+    // ===== CATCH-ALL INTELIGENTE =====
+    server.onNotFound([this](AsyncWebServerRequest *request) {
+        String url = request->url();
+        Serial.printf("❓ Ruta no encontrada: %s (Modo: %s)\n", url.c_str(), 
+                      portal_active ? "PORTAL" : "SENSOR");
+        
+        if (portal_active) {
+            // En modo portal, redirigir todo al portal
+            String redirectHTML = "<!DOCTYPE html><html><head><title>Portal Cautivo</title></head>"
+                                 "<body><script>window.location.href='/';</script>"
+                                 "<p>Redirigiendo al portal...</p></body></html>";
+            request->send(200, "text/html", redirectHTML);
+        } else {
+            // En modo sensor, devolver 404 normal
+            request->send(404, "text/plain", "❌ Página no encontrada");
+        }
+    });
+}
+
+void AppManager::initializeServices() {
+    Serial.println("🔧 Inicializando servicios específicos...");
+    
+    if (portal_active) {
+        Serial.println("🌐 Modo Portal - Servicios básicos");
+        // En modo portal solo lo esencial
+        
+    } else {
+        Serial.println("🌊 Modo Sensor - Servicios completos");
+        // En modo sensor, habilitar WebSerial y OTA
+        WebSerial.begin(&server);
+        Serial.println("✅ WebSerial habilitado");
+        
+        ElegantOTA.begin(&server);
+        Serial.println("✅ WebOTA habilitado");
     }
+}
+
+void AppManager::apCallback() {
+    Serial.println("=== AP CALLBACK - INFO INMEDIATA ===");
+    
+    // Obtener configuración actual del AP
+    String ap_ssid = config_manager.getAPSSID();
+    String ap_password = config_manager.getAPPassword();
+    String ap_ip = WiFi.softAPIP().toString();
+    String ap_mac = WiFi.softAPmacAddress();
+    
+    Serial.println("AP SSID: " + ap_ssid);
+    Serial.println("AP Password: " + ap_password);
+    Serial.println("AP IP: " + ap_ip);
+    Serial.println("AP MAC: " + ap_mac);
+    
+    // Mostrar en display con nueva información
+    display_manager.clear();
+    display_manager.setFont(ArialMT_Plain_10);
+    display_manager.drawString(0, 0, "PORTAL CAUTIVO");
+    display_manager.drawString(0, 12, "Red: " + ap_ssid); // Mostrar SSID completo en una línea
+    display_manager.drawString(0, 24, "Contraseña: " + ap_password);
+    display_manager.drawString(0, 36, "IP: " + ap_ip);
+    // MAC completa en una línea
+    display_manager.drawString(0, 48, "MAC: " + ap_mac); // MAC completa
+    display_manager.display();
+    
+    Serial.println("Portal disponible en: http://" + ap_ip);
 }
 
 void AppManager::loop() {
-    //Serial.println("WiFi Status: " + String(WiFi.status()));
-    //Serial.println("SystemStatus isMonitorEnabled: " + String(systemStatus.isMonitorEnabled()));
-    //Serial.println("ConfigManager isDisplayOn: " + String(configManager.isDisplayOn()));
+    // Reset watchdog para evitar reinicios por timeout
+    esp_task_wdt_reset();
     
-    otaUpdater.loop();
-    systemStatus.loop();
+    drd.loop();
     
-    // Actualizar efecto fade del LED si está activo
-    displayManager.updateFadeEffect();
-    
-    unsigned long currentMillis = millis();
-    
-    // Verificar y manejar la conexión WiFi
-    if (WiFi.status() != WL_CONNECTED && wifiConnected) {
-        Serial.println("=== WiFi desconectado ===");
-        wifiConnected = false;
-        lastWifiRetryMillis = currentMillis;
-        
-        if (configManager.isDisplayOn()) {
-            displayManager.clear();
-            displayManager.setFont(ArialMT_Plain_10);
-            displayManager.setTextAlignment(TEXT_ALIGN_CENTER);
-            displayManager.drawString(64, 0, F("WiFi perdido"));
-            displayManager.drawString(64, 15, F("Reintentando..."));
-            displayManager.drawString(64, 30, F("Portal cautivo:"));
-            displayManager.drawString(64, 40, configManager.getApSSID());
-            displayManager.drawString(64, 50, F("192.168.4.1"));
-            displayManager.display();
-        }
+    // Actualizar sincronización NTP
+    if (ntpSync) {
+        ntpSync->loop();
     }
     
-    // Reintento de conexión WiFi cada 5 minutos
-    if (!wifiConnected && (currentMillis - lastWifiRetryMillis >= wifiRetryInterval)) {
-        Serial.println(F("=== Reintentando conexión WiFi ==="));
-        lastWifiRetryMillis = currentMillis;
-        
-        // Intentar reconexión
-        WiFi.reconnect();
-        
-        // Esperar hasta 15 segundos
-        int attempts = 0;
-        while (WiFi.status() != WL_CONNECTED && attempts < 30) {
-            delay(500);
-            attempts++;
-            Serial.print(".");
+    // Procesar DNS requests para portal cautivo
+    dnsServer.processNextRequest();
+    
+    // Monitoreo de memoria cada 10 segundos
+    static unsigned long lastMemCheck = 0;
+    if (millis() - lastMemCheck > 10000) {
+        size_t freeHeap = ESP.getFreeHeap();
+        if (freeHeap < 25000) {
+            Serial.printf("⚠️ ADVERTENCIA: Memoria baja: %d bytes\n", freeHeap);
+            // Forzar limpieza de escaneos WiFi si la memoria está baja
+            if (WiFi.scanComplete() >= 0) {
+                WiFi.scanDelete();
+                Serial.println("🧹 Limpieza de escaneo WiFi por memoria baja");
+            }
         }
+        lastMemCheck = millis();
+    }
+    
+    // Chequeo de conexión WiFi después de guardar configuración
+    if (checkingConnection && millis() > connectionCheckTimer) {
+        checkingConnection = false;
         
         if (WiFi.status() == WL_CONNECTED) {
-            Serial.println("\n=== WiFi RECONECTADO ===");
-            Serial.print("IP: ");
-            Serial.println(WiFi.localIP());
-            wifiConnected = true;
+            Serial.println("✅ Conectado exitosamente a WiFi!");
+            Serial.println("📍 IP asignada: " + WiFi.localIP().toString());
+            wifi_connected = true;
             
-            if (configManager.isDisplayOn()) {
-                displayManager.clear();
-                displayManager.setTextAlignment(TEXT_ALIGN_CENTER);
-                displayManager.drawString(64, 0, F("WiFi OK"));
-                displayManager.drawString(64, 20, WiFi.localIP().toString());
-                displayManager.display();
-                delay(2000);
-            }
+            // ACTIVAR MODO SENSOR: Habilitar auto-sleep después de conectar WiFi
+            display_manager.enableAutoSleep(true);
+            Serial.println("🖥️ Modo sensor activado - Auto-sleep HABILITADO");
+            
+            // Opcional: Desactivar AP después de conectar
+            // WiFi.softAPdisconnect(true);
+            // Serial.println("🔌 Access Point desactivado, solo modo Cliente WiFi");
         } else {
-            Serial.println("\n=== Falló reconexión ===");
+            Serial.println("❌ No se pudo conectar a WiFi. Reintentando...");
+            Serial.printf("📊 Estado WiFi: %d\n", WiFi.status());
         }
     }
     
-    //Serial.println("AppManager::loop() - Checking update interval.");
-    if (currentMillis - previousMillis >= interval) {
-        // Reducir logs solo cada 30 segundos
-        static unsigned long lastVerboseLog = 0;
-        bool shouldLog = (currentMillis - lastVerboseLog) > 30000;
+    // Manejar botón PRG para despertar pantalla
+    display_manager.handlePRGButton();
+    
+    // Chequear auto-sleep de pantalla (solo en modo sensor)
+    display_manager.checkAutoSleep();
+    
+    // ===== TUYA DEVICE LOOP (Commercial Style) =====
+    if (tuyaDevice) {
+        tuyaDevice->loop();
+    }
+    
+    // ===== LECTURA INTELIGENTE DEL SENSOR (solo en modo normal) =====
+    if (!portal_active) {
+        static unsigned long lastSensorRead = 0;
+        static float lastReadings[10] = {0}; // Historial de últimas lecturas
+        static uint8_t readingIndex = 0;
+        static bool isFillingDetected = false;
         
-        if (shouldLog) {
-            Serial.println("AppManager::loop() - Actualizando sensores...");
-            lastVerboseLog = currentMillis;
-        }
+        // Obtener configuración de intervalos
+        SensorConfig sensorConfig = config_manager.getSensorConfig();
+        uint16_t currentInterval = isFillingDetected ? 
+            sensorConfig.getFillingInterval() * 1000 : 
+            sensorConfig.getNormalInterval() * 1000;
         
-        previousMillis = currentMillis;
-        
-        sensorManager.update();
-        
-        if (systemStatus.isMonitorEnabled() && shouldLog) {
-            String sensorJson = sensorManager.getSensorJson("WaterLevel");
-            Serial.println("JSON del sensor: " + sensorJson);
-        }
-        
-        if (configManager.isDisplayOn()) {
-            StaticJsonDocument<256> doc;
-            String sensorJson = sensorManager.getSensorJson("WaterLevel");
+        if (millis() - lastSensorRead > currentInterval) {
+            Serial.printf("🌊 Leyendo sensor (Intervalo: %s - %ds)...\n", 
+                         isFillingDetected ? "LLENANDO" : "NORMAL",
+                         currentInterval / 1000);
+                         
+            sensor_manager.update();
+            
+            // Obtener último valor leído para detección de llenado
+            String sensorJson = sensor_manager.getSensorJson("WaterLevel");
+            DynamicJsonDocument doc(256);
             DeserializationError error = deserializeJson(doc, sensorJson);
+            
             if (!error) {
-                String distancia = doc["distancia_cm"].as<String>();
-                String litros = doc["litros"].as<String>();
-                if (shouldLog) {
-                    Serial.println("Actualizando display - Distancia: " + distancia + ", Litros: " + litros);
+                float currentLevel = doc["litros"] | 0.0;
+                
+                // Guardar lectura en historial circular
+                lastReadings[readingIndex] = currentLevel;
+                readingIndex = (readingIndex + 1) % 10;
+                
+                // 🔍 DETECCIÓN DE LLENADO
+                bool wasFillingBefore = isFillingDetected;
+                isFillingDetected = detectFilling(lastReadings, sensorConfig.getFillingThreshold());
+                
+                if (isFillingDetected && !wasFillingBefore) {
+                    Serial.println("🚰 LLENADO DETECTADO! Aumentando frecuencia de sensado");
+                    WebSerial.println("🚰 LLENADO DETECTADO! Aumentando frecuencia de sensado");
+                } else if (!isFillingDetected && wasFillingBefore) {
+                    Serial.println("⏸️ Llenado finalizado. Volviendo a intervalo normal");
+                    WebSerial.println("⏸️ Llenado finalizado. Volviendo a intervalo normal");
                 }
-                displayManager.updateDisplay(WiFi.localIP().toString(), distancia, litros);
-            } else {
-                Serial.println("Error deserializando JSON del sensor");
             }
+            
+            // Actualizar pantalla con datos del sensor
+            updateSensorDisplay();
+            
+            // Enviar datos a Tuya Device (si está conectado)
+            if (tuyaDevice && tuyaDevice->isConnected()) {
+                updateTuyaDeviceData();
+            }
+            
+            // Enviar datos a ESP-NOW si es master
+            if (espNowManager && config_manager.getESPNowConfig().isMaster()) {
+                // TODO: Broadcast datos a slaves (implementar después)
+            }
+            
+            lastSensorRead = millis();
         }
     }
     
-    if (configManager.isDisplayOn() && (currentMillis - systemStatus.getOledStartTime() >= systemStatus.getOledTimeout())) {
-        //Serial.println(F("Apagando display por timeout"));
-        systemStatus.setDisplayEnabled(false);
-        displayManager.displayOff();
-        configManager.saveConfig();
-    }
+    yield(); // Permitir que otras tareas del sistema se ejecuten
 }
 
-void AppManager::resetWiFiFromWeb() {
-    Serial.println("=== RESET WiFi SOLICITADO DESDE WEB ===");
-    
-    // Borrar TODA la configuración WiFi
-    WiFi.mode(WIFI_OFF);
-    delay(100);
-    WiFi.disconnect(true);
-    delay(100);
-    esp_wifi_restore();  // Borra configuración WiFi del ESP32
-    
-    // Borrar configuración del WiFiManager
-    if (wifiManager) {
-        wifiManager->resetSettings();
-        Serial.println("Configuración WiFiManager borrada");
-    }
-    
-    // Forzar borrado de preferencias
-    nvs_flash_erase();
-    nvs_flash_init();
-    
-    Serial.println("Configuración WiFi completamente borrada");
-    Serial.println("Reiniciando para entrar en modo configuración...");
-    delay(1000);
+bool AppManager::isWiFiConnected() {
+    return wifi_connected;
+}
+
+String AppManager::getDeviceIP() {
+    return WiFi.softAPIP().toString();
+}
+
+void AppManager::restart() {
+    Serial.println("Reiniciando...");
     ESP.restart();
 }
 
-// Callback estático para reset WiFi
-void AppManager::resetWiFiCallback() {
-    if (_instance) {
-        _instance->resetWiFiFromWeb();
+// ===== FUNCIONES DE MANEJO DE REQUESTS =====
+
+void AppManager::handleScanWiFi(AsyncWebServerRequest *request) {
+    Serial.println("🔍 Procesando solicitud de escaneo WiFi");
+    
+    // Verificar memoria disponible
+    size_t freeHeap = ESP.getFreeHeap();
+    if (freeHeap < 30000) { // Menos de 30KB libre
+        Serial.printf("⚠️ Memoria insuficiente: %d bytes libres\n", freeHeap);
+        String json = "[{\"error\":true,\"message\":\"Memoria insuficiente para escaneo\"}]";
+        request->send(503, "application/json", json);
+        return;
     }
+    
+    // Verificar intervalo de escaneo para evitar spam
+    unsigned long now = millis();
+    if (now - lastWiFiScan < WIFI_SCAN_INTERVAL) {
+        Serial.println("⚠️ Escaneo muy frecuente, esperando...");
+        String json = "[{\"waiting\":true,\"message\":\"Esperando intervalo de escaneo\"}]";
+        request->send(429, "application/json", json);
+        return;
+    }
+    lastWiFiScan = now;
+    
+    // Verificar si ya hay un escaneo en progreso
+    int scanStatus = WiFi.scanComplete();
+    if (scanStatus == WIFI_SCAN_RUNNING) {
+        Serial.println("⚠️ Escaneo ya en progreso");
+        String json = "[{\"scanning\":true,\"message\":\"Escaneo en progreso...\"}]";
+        request->send(200, "application/json", json);
+        return;
+    }
+    
+    // Limpiar escaneo anterior si existe
+    if (scanStatus >= 0) {
+        WiFi.scanDelete();
+    }
+    
+    Serial.printf("🔍 Iniciando escaneo WiFi (Heap libre: %d bytes)\n", ESP.getFreeHeap());
+    
+    // Alimentar watchdog antes del escaneo
+    esp_task_wdt_reset();
+    
+    // Escaneo asíncrono con configuración conservativa
+    int result = WiFi.scanNetworks(true, false, false, 300); // async=true, max_ms_per_chan=300ms
+    
+    if (result == WIFI_SCAN_RUNNING) {
+        String json = "[{\"scanning\":true,\"message\":\"Escaneo iniciado correctamente\"}]";
+        request->send(200, "application/json", json);
+    } else {
+        Serial.printf("❌ Error iniciando escaneo: %d\n", result);
+        String json = "[{\"error\":true,\"message\":\"Error iniciando escaneo WiFi\"}]";
+        request->send(500, "application/json", json);
+    }
+}
+
+void AppManager::handleWiFiResults(AsyncWebServerRequest *request) {
+    // Esta función ya existe en el código, necesito encontrarla
+    Serial.println("📡 Procesando solicitud de resultados WiFi");
+    
+    int scanResult = WiFi.scanComplete();
+    
+    if (scanResult == WIFI_SCAN_RUNNING) {
+        String json = "[{\"scanning\":true,\"message\":\"Escaneo aún en progreso...\"}]";
+        request->send(200, "application/json", json);
+        return;
+    }
+    
+    if (scanResult == WIFI_SCAN_FAILED || scanResult < 0) {
+        String json = "[{\"error\":true,\"message\":\"Error en escaneo WiFi\"}]";
+        request->send(500, "application/json", json);
+        return;
+    }
+    
+    // Construir JSON con resultados
+    String json = "[";
+    int maxNetworks = min(scanResult, 15); // Limitar a 15 redes
+    
+    for (int i = 0; i < maxNetworks; i++) {
+        if (i > 0) json += ",";
+        json += "{";
+        json += "\"ssid\":\"" + WiFi.SSID(i) + "\",";
+        json += "\"rssi\":" + String(WiFi.RSSI(i)) + ",";
+        json += "\"encryption\":" + String(WiFi.encryptionType(i) != WIFI_AUTH_OPEN);
+        json += "}";
+    }
+    json += "]";
+    
+    WiFi.scanDelete(); // Limpiar resultados
+    request->send(200, "application/json", json);
+    Serial.printf("✅ Enviados %d resultados de escaneo\n", maxNetworks);
+}
+
+void AppManager::handleSensorData(AsyncWebServerRequest *request) {
+    Serial.println("🌊 Procesando solicitud de datos del sensor");
+    
+    // Aquí iría la lógica para obtener datos del sensor
+    // Por ahora, datos de ejemplo
+    String json = "{";
+    json += "\"water_level\":" + String(75.5) + ",";
+    json += "\"percentage\":" + String(65) + ",";
+    json += "\"tank_height\":" + String(115.0) + ",";
+    json += "\"distance\":" + String(39.2) + ",";
+    json += "\"status\":\"normal\",";
+    json += "\"timestamp\":" + String(millis());
+    json += "}";
+    
+    request->send(200, "application/json", json);
+}
+
+void AppManager::handleToggleDisplay(AsyncWebServerRequest *request) {
+    Serial.println("🖥️ Procesando toggle de pantalla OLED");
+    
+    if (display_manager.isDisplaySleeping()) {
+        display_manager.wakeUpDisplay();
+        request->send(200, "application/json", "{\"display\":\"awake\",\"message\":\"Pantalla encendida\"}");
+    } else {
+        display_manager.forceDisplaySleep();
+        request->send(200, "application/json", "{\"display\":\"sleeping\",\"message\":\"Pantalla apagada\"}");
+    }
+}
+
+void AppManager::updateSensorDisplay() {
+    // Solo actualizar pantalla si no está durmiendo y estamos en modo sensor
+    if (portal_active || display_manager.isDisplaySleeping()) {
+        return;
+    }
+    
+    Serial.println("🖥️ Actualizando pantalla con datos del sensor");
+    
+    display_manager.clear();
+    display_manager.setFont(ArialMT_Plain_10);
+    
+    // Línea 1: Título con rol ESP-NOW
+    String title = "SENSOR NIVEL AGUA";
+    if (config_manager.getESPNowConfig().isMaster()) {
+        title += " [M]";
+    } else if (config_manager.getESPNowConfig().isSlave()) {
+        title += " [S]";
+    }
+    display_manager.drawString(0, 0, title);
+    
+    // Obtener datos REALES del sensor
+    String sensorJson = sensor_manager.getSensorJson("WaterLevel");
+    if (sensorJson.indexOf("error") >= 0) {
+        // Mostrar error del sensor
+        display_manager.drawString(0, 12, "⚠️ SENSOR ERROR");
+        display_manager.drawString(0, 24, "Verificar conexión");
+        display_manager.drawString(0, 36, "Trig/Echo pins");
+        
+        // Mostrar info de red en caso de error
+        if (WiFi.status() == WL_CONNECTED) {
+            display_manager.drawString(0, 48, "WiFi: " + WiFi.SSID());
+        } else {
+            display_manager.drawString(0, 48, "Sin WiFi");
+        }
+    } else {
+        // Parsear datos reales del sensor
+        DynamicJsonDocument doc(256);
+        DeserializationError error = deserializeJson(doc, sensorJson);
+        
+        if (!error) {
+            float distance = doc["distancia"] | -1.0;
+            float litros = doc["litros"] | 0.0;
+            int percentage = doc["porcentaje"] | 0;
+            
+            // Línea 2: Datos del sensor
+            display_manager.drawString(0, 12, "Dist: " + String(distance, 1) + "cm");
+            display_manager.drawString(0, 24, "Agua: " + String(litros, 1) + "L");
+            display_manager.drawString(0, 36, "Lleno: " + String(percentage) + "%");
+            
+            // Línea 5: Estado + fecha/hora si está disponible
+            String statusLine = "";
+            if (ntpSync && ntpSync->isReady() && config_manager.getSensorConfig().getShowDateTime()) {
+                statusLine = ntpSync->getCompactDateTime(); // "27/09 14:30"
+            } else if (WiFi.status() == WL_CONNECTED) {
+                statusLine = "WiFi: OK";
+            } else {
+                statusLine = "Sin WiFi";
+            }
+            display_manager.drawString(0, 48, statusLine);
+        } else {
+            // Error parseando JSON
+            display_manager.drawString(0, 12, "Error datos sensor");
+            display_manager.drawString(0, 24, "JSON inválido");
+        }
+    }
+    
+    display_manager.display();
+}
+
+void AppManager::updateTuyaDeviceData() {
+    if (!tuyaDevice) return;
+    
+    // Obtener datos del sensor en JSON
+    String sensorJson = sensor_manager.getSensorJson("WaterLevel");
+    DynamicJsonDocument doc(512);
+    DeserializationError error = deserializeJson(doc, sensorJson);
+    
+    if (error) {
+        Serial.println("❌ Error parsing sensor JSON");
+        return;
+    }
+    
+    // Extraer valores del sensor
+    float litros = doc["litros"] | 0.0;
+    float porcentaje = doc["porcentaje"] | 0.0; 
+    float distancia = doc["distancia_cm"] | 0.0;
+    bool alerta = (porcentaje < 20.0);
+    
+    // Enviar a Tuya Device usando Data Points estándar
+    tuyaDevice->updateSensorValue("1", litros);      // DP1: Litros de agua
+    tuyaDevice->updateSensorValue("2", porcentaje);  // DP2: Porcentaje lleno
+    tuyaDevice->updateSensorValue("3", distancia);   // DP3: Distancia sensor
+    tuyaDevice->updateStatus("4", alerta);           // DP4: Alerta agua baja
+    
+    // Log para debug
+    static unsigned long lastTuyaLog = 0;
+    if (millis() - lastTuyaLog > 30000) { // Log cada 30 segundos
+        Serial.println("📱 Datos enviados a Tuya App:");
+        Serial.println("   💧 Agua: " + String(litros, 1) + "L (" + String(porcentaje, 1) + "%)");
+        Serial.println("   📏 Distancia: " + String(distancia, 1) + "cm");
+        Serial.println("   🚨 Alerta: " + String(alerta ? "AGUA BAJA" : "OK"));
+        lastTuyaLog = millis();
+    }
+}
+
+bool AppManager::detectFilling(float readings[], uint8_t threshold) {
+    // Algoritmo para detectar si el contenedor se está llenando
+    // Verifica si las últimas N lecturas son incrementales
+    
+    if (threshold < 2 || threshold > 10) {
+        threshold = 3; // Por seguridad
+    }
+    
+    // Contar lecturas válidas (> 0)
+    uint8_t validReadings = 0;
+    for (uint8_t i = 0; i < 10; i++) {
+        if (readings[i] > 0) {
+            validReadings++;
+        }
+    }
+    
+    // Necesitamos al menos 'threshold' lecturas válidas
+    if (validReadings < threshold) {
+        return false;
+    }
+    
+    // Obtener las últimas 'threshold' lecturas válidas
+    float recentReadings[10];
+    uint8_t recentIndex = 0;
+    
+    // Buscar desde la posición más reciente hacia atrás
+    for (int i = 9; i >= 0 && recentIndex < threshold; i--) {
+        if (readings[i] > 0) {
+            recentReadings[recentIndex] = readings[i];
+            recentIndex++;
+        }
+    }
+    
+    // Verificar si hay tendencia incremental consistente
+    uint8_t incrementalCount = 0;
+    float minIncrease = 0.5; // Mínimo incremento en litros para considerar llenado
+    
+    for (uint8_t i = 1; i < recentIndex; i++) {
+        // recentReadings[0] es la más reciente, recentReadings[i] es más antigua
+        if (recentReadings[0] > recentReadings[i] + minIncrease) {
+            incrementalCount++;
+        }
+    }
+    
+    // Si al menos (threshold-1) comparaciones muestran incremento, está llenando
+    bool isIncreasing = (incrementalCount >= (threshold - 1));
+    
+    if (isIncreasing) {
+        Serial.printf("🔍 Llenado detectado: %d/%d lecturas incrementales\n", 
+                     incrementalCount, threshold - 1);
+        Serial.printf("   📊 Lecturas recientes (L): ");
+        for (uint8_t i = 0; i < recentIndex; i++) {
+            Serial.printf("%.1f ", recentReadings[i]);
+        }
+        Serial.println();
+    }
+    
+    return isIncreasing;
 }

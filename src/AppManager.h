@@ -3,80 +3,79 @@
 
 #include <Arduino.h>
 #include <WiFi.h>
-#include <heltec.h>
-#include "SPIFFS.h"
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
-#include <ESPAsyncDNSServer.h>
-
-#define _ESPASYNC_WIFIMGR_LOGLEVEL_    0
-class ESPAsync_WiFiManager;
-class ESPAsync_WMParameter;
-
-#include <ArduinoJson.h>
+#include <SPIFFS.h>
 #include <ESP_DoubleResetDetector.h>
-#include <ConfigManager.h>
-#include "SensorManager.h"
-#include "WaterLevelSensor.h"
+#include <WebSerial.h>
+#include <ElegantOTA.h>
 #include "DisplayManager.h"
-#include "WebManager.h"
-#include "SystemStatus.h"
-#include "OTAUpdater.h"
+#include "SensorManager.h"
+#include "ConfigManagerV2.h"
+#include "NetworkConfig.h"
+#include "SensorConfig.h"
+#include "HardwareBoardConfig.h"
+#include "ESPNowManager.h"
+#include "GoogleHomeIntegration.h"
+#include "AlexaIntegration.h"
+#include "TuyaIntegration.h"
+#include "TuyaDevice.h"
+#include "NTPTimeSync.h"
+#include "WaterLevelSensor.h"
 
 class AppManager {
 public:
     AppManager();
-    void begin();
+    void initialize();
     void loop();
-    void resetWiFiFromWeb();  // Nuevo método para reset desde web
+    bool isWiFiConnected();
+    String getDeviceIP();
+    void restart();
 
 private:
-    // --- Hardware y Pines ---
-    static const int TRIGGER_PIN = 12;
-    static const int ECHO_PIN_1 = 13;
-
-    // --- Detector de Doble Reset ---
-    static const int DRD_TIMEOUT = 5000;
-    static const int DRD_ADDRESS = 0;
-    DoubleResetDetector drd;
-
-    // --- Variables de Estado ---
-    bool wifiConnected;
-    unsigned long lastWifiRetryMillis;
-    const long wifiRetryInterval = 30000;
-
-    // --- Temporizadores ---
-    unsigned long previousMillis;
-    const long interval = 10000;  // Aumentado a 10 segundos para mejorar estabilidad
-
-    // --- Objetos Globales ---
-    AsyncWebServer server;
-    AsyncDNSServer dnsServer;
-    ConfigManager configManager;
-    ESPAsync_WiFiManager* wifiManager;
-    DisplayManager displayManager;
-    SensorManager sensorManager;
-    WebManager* webManager;
-    SystemStatus systemStatus;
-    OTAUpdater otaUpdater;
-    WaterLevelSensor waterLevelSensor;
-
-    // Custom WiFiManager parameters
-    ESPAsync_WMParameter* custom_tipo_contenedor;
-    ESPAsync_WMParameter* custom_altura_max;
-    ESPAsync_WMParameter* custom_capacidad;
-    ESPAsync_WMParameter* custom_distancia_min;
-    ESPAsync_WMParameter* custom_hostname;
-    ESPAsync_WMParameter* custom_check_updates;
-    ESPAsync_WMParameter* custom_ap_ssid;
-    ESPAsync_WMParameter* custom_ap_password;
-
-    void saveWiFiManagerParams();
-
-    static AppManager* _instance;
-    static void saveConfigCallback();
-    static void configModeCallback(ESPAsync_WiFiManager* myWiFiManager);
-    static void resetWiFiCallback();  // Nuevo callback estático para reset WiFi
+    DisplayManager display_manager;
+    SensorManager sensor_manager;
+    ConfigManager config_manager;
+    bool wifi_connected;
+    bool portal_active;
+    bool forcePortalMode;  // Para forzar portal cautivo con doble reset
+    
+    // Variables para chequeo de conexión WiFi
+    unsigned long connectionCheckTimer;
+    bool checkingConnection;
+    
+    // Variables para auto-sleep de pantalla
+    unsigned long lastDisplayActivity;
+    bool displaySleeping;
+    
+    // IoT Integrations
+    ESPNowManager* espNowManager;
+    GoogleHomeIntegration* googleHome;
+    AlexaIntegration* alexa;
+    TuyaIntegration* tuya;
+    TuyaDevice* tuyaDevice;
+    NTPTimeSync* ntpSync;
+    
+    void initializeNetwork();
+    void startPortalMode();       // Iniciar portal cautivo
+    void startNormalMode();       // Iniciar modo sensor normal
+    bool tryConnectWiFi();        // Intentar conectar WiFi predeterminado
+    void setupWebServer();        // Web server unificado inteligente
+    void setupStaticFiles();      // Archivos estáticos compartidos
+    void setupSmartRoutes();      // Rutas principales inteligentes
+    void setupConditionalRoutes(); // Rutas específicas por modo
+    void setupCaptiveDetectionRoutes(); // Detección portal cautivo
+    void initializeServices();    // Servicios según modo
+    void handleScanWiFi(AsyncWebServerRequest *request);
+    void handleWiFiResults(AsyncWebServerRequest *request);
+    void handleSensorData(AsyncWebServerRequest *request);
+    void handleToggleDisplay(AsyncWebServerRequest *request);
+    void updateSensorDisplay();       // Actualizar pantalla con datos del sensor
+    void updateTuyaDeviceData();      // Actualizar datos Tuya Device
+    bool detectFilling(float readings[], uint8_t threshold); // Detectar si el contenedor se está llenando
+    void apCallback();
+    void wakeUpDisplay();      // Despertar pantalla por actividad
+    void checkAutoSleep();     // Verificar si debe apagar pantalla
 };
 
-#endif // APP_MANAGER_H
+#endif

@@ -218,3 +218,30 @@ Puedes interactuar con el dispositivo a través de la consola WebSerial disponib
 #### **Correcciones del Display OLED:**
 - Se eliminó el mensaje "OLED init..." que aparecía al iniciar el dispositivo.
 - Se solucionó un problema que causaba que la pantalla no se limpiara correctamente al iniciar una actualización OTA, mostrando el mensaje de "Actualizando..." sobre los datos anteriores.
+
+## 🐛 Issues Conocidos - Pendientes
+
+### **Compatibilidad iOS 14.6 - Portal Cautivo**
+- **Estado**: 🔴 Pendiente de solución
+- **Problema**: Los botones "Aplicar y Conectar", "Reiniciar" y "Reset de fábrica" no funcionan en iOS 14.6 Portal Cautivo mode
+- **Descripción**: Las limitaciones de Safari en portal cautivo impiden que ciertos métodos JavaScript funcionen correctamente
+- **Workaround**: Usar dispositivo Android o versión iOS más reciente para configuración inicial
+- **Prioridad**: Media - No afecta funcionalidad básica del sensor
+
+### **Refactorización de Arquitectura Web** ✅
+- **Estado**: � Completado
+- **Implementado**: Portal cautivo separado en estructura modular organizada
+- **Estructura**: `/captive-portal/` con `index.html`, `style.css`, `script.js` (archivos separados)
+- **Backend actualizado**: AppManager.cpp configurado para nueva ruta
+- **Fase Futura**: Sistema híbrido con build script para generar archivo todo-en-uno
+- **Beneficio**: Código mantenible, escalable y preparado para repositorio GitHub público
+- **Resultado**: ✅ Subido y funcionando - Arquitectura profesional establecida
+
+### **Funcionalidades Completadas** ✅
+- Footer fijo en parte inferior de la página
+- Panel arrastrable móvil restaurado 
+- Barras WiFi con colores correctos por intensidad
+- Diseño visual mejorado con labels en negrita y separadores
+- Todos los archivos e imágenes subidos correctamente
+
+**Nota**: El resto de funcionalidades del portal cautivo funcionan correctamente en todos los dispositivos.

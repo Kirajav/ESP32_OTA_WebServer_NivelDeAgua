@@ -2,6 +2,7 @@
 #define DISPLAY_MANAGER_H
 
 #include <Arduino.h>
+#include <Wire.h>
 #include <heltec.h>
 
 class DisplayManager {
@@ -19,6 +20,17 @@ public:
     void displayOn();
     void displayOff();
     void drawProgressBar(int x, int y, int width, int height, int progress);
+    
+    // Auto-sleep control
+    void setAutoSleepTime(uint16_t seconds);
+    uint16_t getAutoSleepTime() const;
+    void enableAutoSleep(bool enable);  // Solo se activa en modo sensor
+    void checkAutoSleep();
+    void wakeUpDisplay();  // Solo responde a PRG o botón web
+    void forceDisplaySleep();
+    bool isDisplaySleeping() const;
+    void showSplashScreen();
+    void handlePRGButton();  // Manejo del botón PRG
     
     // Control del LED blanco
     void setLedState(bool state);
@@ -38,6 +50,20 @@ private:
     static const int LED_CHANNEL = 0;
     static const int LED_FREQ = 5000;
     static const int LED_RESOLUTION = 8;
+    
+    // Auto-sleep variables
+    uint16_t _autoSleepTime;        // tiempo en segundos
+    unsigned long _lastActivity;    // última actividad detectada
+    bool _displaySleeping;          // estado de la pantalla
+    bool _autoSleepEnabled;         // habilitado solo en modo sensor
+    bool _countdownActive;          // mostrando countdown de apagado
+    int _countdownSeconds;          // segundos restantes del countdown
+    unsigned long _countdownStart;  // inicio del countdown
+    
+    // Pin del botón PRG
+    static const int PRG_BUTTON_PIN = 0;
+    bool _lastButtonState;
+    unsigned long _lastButtonPress;
 };
 
 #endif // DISPLAY_MANAGER_H

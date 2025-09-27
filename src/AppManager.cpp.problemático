@@ -1,0 +1,1411 @@
+#include "AppManager.h"
+#include <DNSServer.h>
+#include <esp_task_wdt.h>
+#include <esp_system.h>
+
+AsyncWebServer server(80);
+DNSServer dnsServer;
+DoubleResetDetector drd(10, 0);
+
+// Variables para estabilidad del sistema
+static unsigned long lastWiFiScan = 0;
+static const unsigned long WIFI_SCAN_INTERVAL = 10000; // 10 segundos mínimo entre escaneos
+
+// Código de download mode removido - no es necesario
+
+AppManager::AppManager() {
+    Serial.println("AppManager iniciado");
+    wifi_connected = false;
+    portal_active = false;
+    lastDisplayActivity = 0;
+    displaySleeping = false;
+}
+
+void AppManager::initialize() {
+    Serial.println("=== INICIALIZANDO SISTEMA ===");
+    
+    // Configurar watchdog para mayor estabilidad
+    esp_task_wdt_init(30, true); // 30 segundos timeout, panic habilitado
+    esp_task_wdt_add(NULL); // Añadir tarea actual al watchdog
+    
+    Serial.printf("💾 Memoria libre al inicio: %d bytes\n", ESP.getFreeHeap());
+    
+    // ⚡ VERIFICAR DOBLE RESET
+    if (drd.detectDoubleReset()) {
+        Serial.println("🔄 DOBLE RESET DETECTADO - INICIANDO PORTAL CAUTIVO");
+        forcePortalMode = true;
+    } else {
+        Serial.println("✅ Reset normal - Intentando conectar WiFi");
+        forcePortalMode = false;
+    }
+    
+    if (!SPIFFS.begin(true)) {
+        Serial.println("ERROR: SPIFFS falló");
+        return;
+    }
+    
+    // Inicializar ConfigManager
+    if (!config_manager.begin()) {
+        Serial.println("⚠️ Error inicializando ConfigManager, usando defaults");
+    }
+    
+    // Inicializar variables de conexión
+    connectionCheckTimer = 0;
+    checkingConnection = false;
+    
+    display_manager.begin();
+    
+    // Configurar auto-sleep de pantalla (por defecto 30 segundos)
+    uint16_t autoSleepTime = config_manager.getAutoSleepTime();
+    display_manager.setAutoSleepTime(autoSleepTime);
+    Serial.printf("⏰ Auto-sleep configurado: %d segundos\n", autoSleepTime);
+    
+    display_manager.drawString(0, 0, "Iniciando...");
+    display_manager.display();
+    
+    // Inicializar timer de auto-sleep
+    lastDisplayActivity = millis();
+    
+    esp_task_wdt_reset(); // Reset watchdog
+    
+    initializeNetwork();
+    Serial.println("Sistema inicializado");
+    Serial.printf("💾 Memoria libre tras inicialización: %d bytes\n", ESP.getFreeHeap());
+}
+
+void AppManager::initializeNetwork() {
+    if (forcePortalMode) {
+        // 🔄 MODO PORTAL CAUTIVO (Doble Reset)
+        Serial.println("🔄 INICIANDO PORTAL CAUTIVO...");
+        startPortalMode();
+    } else {
+        // ✅ MODO NORMAL - Intentar conectar WiFi
+        Serial.println("🌐 INTENTANDO CONECTAR WIFI PREDETERMINADO...");
+        if (tryConnectWiFi()) {
+            startNormalMode();
+        } else {
+            Serial.println("❌ No se pudo conectar - Iniciando portal cautivo");
+            startPortalMode();
+        }
+    }
+}
+
+void AppManager::startPortalMode() {
+    WiFi.mode(WIFI_AP);
+    WiFi.softAPConfig(IPAddress(192, 168, 1, 1), IPAddress(192, 168, 1, 1), IPAddress(255, 255, 255, 0));
+    
+    String ap_ssid = config_manager.getAPSSID();
+    String ap_password = config_manager.getAPPassword();
+    
+    bool ap_result = WiFi.softAP(ap_ssid.c_str(), ap_password.c_str());
+    
+    if (ap_result) {
+        Serial.println("✅ PORTAL CAUTIVO ACTIVO");
+        apCallback();
+        
+        // DNS server para portal cautivo
+        dnsServer.start(53, "*", WiFi.softAPIP());
+        Serial.println("📡 DNS Server iniciado");
+        
+        setupWebServer(); // Web server unificado inteligente
+        wifi_connected = false;
+        portal_active = true;
+        Serial.printf("🌐 Portal: http://%s\n", WiFi.softAPIP().toString().c_str());
+    } else {
+        Serial.println("❌ ERROR creando AP");
+    }
+}
+
+bool AppManager::tryConnectWiFi() {
+    NetworkConfig network_config = config_manager.getNetworkConfig();
+    
+    // Buscar red WiFi predeterminada
+    WiFiNetwork defaultNetwork;
+    bool hasDefault = false;
+    
+    for (const auto& network : networkConfig.wifi_networks) {
+        if (network.is_default) {
+            defaultNetwork = network;
+            hasDefault = true;
+            break;
+        }
+    }
+    
+    if (!hasDefault || defaultNetwork.ssid.length() == 0) {
+        Serial.println("⚠️ No hay WiFi predeterminado configurado");
+        return false;
+    }
+    
+    Serial.printf("🔌 Conectando a: %s\n", defaultNetwork.ssid.c_str());
+    
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(defaultNetwork.ssid.c_str(), defaultNetwork.password.c_str());
+    
+    int attempts = 0;
+    while (WiFi.status() != WL_CONNECTED && attempts < 20) { // 10 segundos max
+        delay(500);
+        Serial.print(".");
+        attempts++;
+        esp_task_wdt_reset();
+    }
+    Serial.println();
+    
+    if (WiFi.status() == WL_CONNECTED) {
+        Serial.printf("✅ WiFi conectado! IP: %s\n", WiFi.localIP().toString().c_str());
+        return true;
+    } else {
+        Serial.printf("❌ Error conectando WiFi (Estado: %d)\n", WiFi.status());
+        return false;
+    }
+}
+
+void AppManager::startNormalMode() {
+    wifi_connected = true;
+    portal_active = false;
+    
+    Serial.println("🌊 INICIANDO MODO SENSOR NORMAL");
+    setupWebServer(); // Web server unificado inteligente
+    
+    // Mostrar info en pantalla OLED
+    display_manager.clear();
+    display_manager.setFont(ArialMT_Plain_10);
+    display_manager.drawString(0, 0, "SENSOR ACTIVO");
+    display_manager.drawString(0, 12, "WiFi: " + WiFi.SSID());
+    display_manager.drawString(0, 24, "IP: " + WiFi.localIP().toString());
+    display_manager.drawString(0, 36, "Leyendo sensor...");
+    display_manager.display();
+    
+    // Habilitar auto-sleep
+    display_manager.enableAutoSleep(true);
+}
+
+void AppManager::setupWebServer() {
+    Serial.println("🌐 Configurando Web Server Unificado Inteligente...");
+    
+    // ===== ARCHIVOS ESTÁTICOS COMPARTIDOS =====
+    setupStaticFiles();
+    
+    // ===== RUTAS PRINCIPALES INTELIGENTES =====
+    setupSmartRoutes();
+    
+    // ===== RUTAS CONDICIONALES POR MODO =====
+    setupConditionalRoutes();
+    
+    // ===== RUTAS DE DETECCIÓN DE PORTAL CAUTIVO =====
+    setupCaptiveDetectionRoutes();
+    
+    // ===== SERVICIOS ESPECÍFICOS POR MODO =====
+    initializeServices();
+    
+    Serial.printf("📡 Web server configurado para modo: %s\n", 
+                  portal_active ? "PORTAL CAUTIVO" : "SENSOR NORMAL");
+}
+
+void AppManager::setupStaticFiles() {
+    // Archivos estáticos que siempre están disponibles
+    server.serveStatic("/style.css", SPIFFS, "/style.css");
+    server.serveStatic("/app.js", SPIFFS, "/app.js");
+    
+    // Imágenes del sensor (disponibles en ambos modos)
+    server.serveStatic("/imagen_vacio.jpg", SPIFFS, "/imagen_vacio.jpg", "image/jpeg");
+    server.serveStatic("/imagen_lleno.jpg", SPIFFS, "/imagen_lleno.jpg", "image/jpeg");
+    server.serveStatic("/imagen_error.jpg", SPIFFS, "/imagen_error.jpg", "image/jpeg");
+}
+
+// ===========================================================================
+// WEB SERVER UNIFICADO INTELIGENTE - FUNCIONES ESPECIALIZADAS
+// ===========================================================================
+
+// Código duplicado eliminado por errores de compilación
+// Todo el código problemático ha sido eliminado por errores de compilación.
+// Las funciones setupSmartRoutes, setupConditionalRoutes, setupCaptiveDetectionRoutes 
+// e initializeServices están implementadas correctamente más abajo.
+    server.on("/generate_204", HTTP_GET, [](AsyncWebServerRequest *request) {
+        Serial.println("Android detectó portal cautivo: /generate_204");
+        request->send(200, "text/html", "<html><head><script>window.location.href='/';</script></head><body>Redirecting...</body></html>");
+    });
+    server.on("/gen_204", HTTP_GET, [](AsyncWebServerRequest *request) {
+        Serial.println("Android detectó portal cautivo: /gen_204");
+        request->send(200, "text/html", "<html><head><script>window.location.href='/';</script></head><body>Redirecting...</body></html>");
+    });
+    
+    // iOS detecta portal cautivo - Rutas específicas
+    server.on("/hotspot-detect.html", HTTP_GET, [](AsyncWebServerRequest *request) {
+        Serial.println("iOS detectó portal cautivo: /hotspot-detect.html");
+        request->send(200, "text/html", "<html><head><script>window.location.href='/';</script></head><body>Redirecting...</body></html>");
+    });
+    server.on("/library/test/success.html", HTTP_GET, [](AsyncWebServerRequest *request) {
+        Serial.println("iOS detectó portal cautivo: /library/test/success.html");
+        request->send(200, "text/html", "<html><head><script>window.location.href='/';</script></head><body>Redirecting...</body></html>");
+    });
+    
+    // iOS rutas adicionales específicas
+    server.on("/captive", HTTP_GET, [](AsyncWebServerRequest *request) {
+        Serial.println("iOS detectó portal cautivo: /captive");
+        request->send(200, "text/html", "<html><head><script>window.location.href='/';</script></head><body>Redirecting...</body></html>");
+    });
+    server.on("/bag", HTTP_GET, [](AsyncWebServerRequest *request) {
+        Serial.println("iOS detectó portal cautivo: /bag");
+        request->send(200, "text/html", "<html><head><script>window.location.href='/';</script></head><body>Redirecting...</body></html>");
+    });
+    server.on("/service", HTTP_GET, [](AsyncWebServerRequest *request) {
+        Serial.println("iOS detectó portal cautivo: /service");
+        request->send(200, "text/html", "<html><head><script>window.location.href='/';</script></head><body>Redirecting...</body></html>");
+    });
+    
+    // Windows y otros
+    server.on("/connecttest.txt", HTTP_GET, [](AsyncWebServerRequest *request) {
+        Serial.println("Windows detectó portal cautivo: /connecttest.txt");
+        request->send(200, "text/html", "<html><head><script>window.location.href='/';</script></head><body>Redirecting...</body></html>");
+    });
+    server.on("/redirect", HTTP_GET, [](AsyncWebServerRequest *request) {
+        Serial.println("Detectó portal cautivo: /redirect");
+        request->send(200, "text/html", "<html><head><script>window.location.href='/';</script></head><body>Redirecting...</body></html>");
+    });
+    
+    // Ruta común de prueba de conectividad
+    server.on("/connectivity-check", HTTP_GET, [](AsyncWebServerRequest *request) {
+        Serial.println("Detectó portal cautivo: /connectivity-check");
+        request->send(200, "text/html", "<html><head><script>window.location.href='/';</script></head><body>Redirecting...</body></html>");
+    });
+    
+    // ===== RUTAS ADICIONALES DE DETECCIÓN DE PORTAL CAUTIVO =====
+    
+    // Microsoft Windows rutas adicionales
+    server.on("/ncsi.txt", HTTP_GET, [](AsyncWebServerRequest *request) {
+        Serial.println("Windows NCSI detectó portal cautivo: /ncsi.txt");
+        request->send(200, "text/html", "<html><head><script>window.location.href='/';</script></head><body>Redirecting...</body></html>");
+    });
+    
+    // Firefox rutas de detección
+    server.on("/success.txt", HTTP_GET, [](AsyncWebServerRequest *request) {
+        Serial.println("Firefox detectó portal cautivo: /success.txt");
+        request->send(200, "text/html", "<html><head><script>window.location.href='/';</script></head><body>Redirecting...</body></html>");
+    });
+    
+    // Ubuntu/Linux rutas comunes
+    server.on("/check_network_status.txt", HTTP_GET, [](AsyncWebServerRequest *request) {
+        Serial.println("Ubuntu detectó portal cautivo: /check_network_status.txt");
+        request->send(200, "text/html", "<html><head><script>window.location.href='/';</script></head><body>Redirecting...</body></html>");
+    });
+    
+    // Chrome rutas de detección
+    server.on("/chrome-variations/seed", HTTP_GET, [](AsyncWebServerRequest *request) {
+        Serial.println("Chrome detectó portal cautivo: /chrome-variations/seed");
+        request->send(200, "text/html", "<html><head><script>window.location.href='/';</script></head><body>Redirecting...</body></html>");
+    });
+    
+
+    
+    // CATCH-ALL: Cualquier otra petición desconocida redirige al portal
+    server.onNotFound([](AsyncWebServerRequest *request) {
+        String url = request->url();
+        String host = request->host();
+        Serial.println("🔍 Petición no encontrada - URL: " + url + " Host: " + host);
+        Serial.println("🔄 FORZANDO redirección a portal cautivo inline");
+        
+        if (request->method() == HTTP_OPTIONS) {
+            request->send(200);
+        } else if (request->method() == HTTP_GET) {
+            // FORZAR SIEMPRE el portal cautivo inline - NO usar SPIFFS
+            String portalHTML = "<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width, initial-scale=1.0'><title>🌐 PORTAL CAUTIVO - CAPTURADO</title><style>body{font-family:Arial,sans-serif;margin:0;padding:20px;background:linear-gradient(135deg,#ff6b6b 0%,#4ecdc4 100%);color:white;min-height:100vh}.container{max-width:600px;margin:0 auto;background:rgba(255,255,255,0.95);padding:30px;border-radius:15px;box-shadow:0 8px 20px rgba(0,0,0,0.3);color:#333}.header{text-align:center;margin-bottom:30px}.header h1{color:#ff6b6b;margin:0;font-size:2.5em}.header p{color:#666;font-size:1.2em}.captured{background:#ff6b6b;color:white;padding:15px;border-radius:10px;text-align:center;margin:20px 0;font-size:1.3em}</style></head><body><div class='container'><div class='header'><h1>� CAPTURADO!</h1><p>Portal Cautivo Activo</p></div><div class='captured'>✅ Ruta capturada: " + url + "<br>📡 Host: " + host + "<br>🌐 IP ESP32: " + WiFi.softAPIP().toString() + "</div><p style='text-align:center;font-size:1.2em;'><strong>🔥 TODAS LAS RUTAS ESTÁN SIENDO INTERCEPTADAS</strong></p><div style='text-align:center;margin-top:30px;'><a href='/' style='background:#4ecdc4;color:white;padding:15px 30px;text-decoration:none;border-radius:8px;font-size:18px;display:inline-block;'>🏠 IR AL PORTAL PRINCIPAL</a></div></div></body></html>";
+            request->send(200, "text/html", portalHTML);
+        } else {
+            request->send(404);
+        }
+    });
+    
+    // ===== PÁGINA PRINCIPAL - CONDICIONAL SEGÚN MODO =====
+    server.on("/", HTTP_GET, [this](AsyncWebServerRequest *request) {
+        Serial.println("📄 Sirviendo página principal");
+        Serial.println("🔍 URL solicitada: " + request->url());
+        Serial.println("🏠 Host: " + request->host());
+        Serial.println("📶 WiFi Status: " + String(WiFi.status() == WL_CONNECTED ? "CONECTADO" : "NO CONECTADO"));
+        Serial.println("🌐 Modo AP: " + String(WiFi.getMode() == WIFI_AP || WiFi.getMode() == WIFI_AP_STA ? "ACTIVO" : "INACTIVO"));
+        
+        // Si WiFi está conectado y NO estamos en modo AP, servir dashboard principal
+        if (WiFi.status() == WL_CONNECTED && WiFi.getMode() != WIFI_AP) {
+            Serial.println("✅ Sirviendo dashboard principal (index.html) - WiFi conectado");
+            if (SPIFFS.exists("/index.html")) {
+                request->send(SPIFFS, "/index.html", "text/html");
+                return;
+            } else {
+                Serial.println("⚠️ index.html no encontrado");
+                request->send(404, "text/plain", "index.html no encontrado");
+                return;
+            }
+        }
+        
+        // En modo AP (portal cautivo), servir captive_portal.html
+        Serial.println("🌐 Sirviendo portal cautivo - Modo AP activo");
+        if (SPIFFS.exists("/captive_portal.html")) {
+            Serial.println("✅ Sirviendo portal cautivo multiidioma desde SPIFFS");
+            
+            // Headers específicos para iOS y compatibilidad con portales cautivos
+            AsyncWebServerResponse* response = request->beginResponse(SPIFFS, "/captive_portal.html", "text/html");
+            response->addHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+            response->addHeader("Pragma", "no-cache");
+            response->addHeader("Expires", "0");
+            response->addHeader("Content-Security-Policy", "default-src 'self' 'unsafe-inline' 'unsafe-eval'; img-src 'self' data:;");
+            response->addHeader("X-Frame-Options", "DENY");
+            response->addHeader("X-Content-Type-Options", "nosniff");
+            request->send(response);
+            return;
+        } else {
+            Serial.println("⚠️ captive_portal.html no encontrado, usando fallback inline");
+            String portalHTML = "<!DOCTYPE html><html><head><meta charset='UTF-8'><title>Portal Cautivo - SPIFFS Error</title></head><body><h1>⚠️ Error: captive_portal.html no encontrado en SPIFFS</h1><p>El portal cautivo no se pudo cargar correctamente.</p><a href='/debug'>Ver debug de archivos</a></body></html>";
+            request->send(200, "text/html", portalHTML);
+        }
+    });
+    
+    // Dashboard original como backup
+    server.on("/dashboard", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(SPIFFS, "/index.html", "text/html");
+    });
+    
+    // Ruta de debug para listar archivos en SPIFFS
+    server.on("/debug", HTTP_GET, [](AsyncWebServerRequest *request) {
+        String html = "<html><body><h2>Archivos en SPIFFS:</h2><ul>";
+        File root = SPIFFS.open("/");
+        File file = root.openNextFile();
+        while(file) {
+            html += "<li>" + String(file.name()) + " (" + String(file.size()) + " bytes)</li>";
+            file = root.openNextFile();
+        }
+        html += "</ul>";
+        html += "<p>captive_portal.html existe: " + String(SPIFFS.exists("/captive_portal.html") ? "SI" : "NO") + "</p>";
+        html += "<p>index.html existe: " + String(SPIFFS.exists("/index.html") ? "SI" : "NO") + "</p>";
+        html += "</body></html>";
+        request->send(200, "text/html", html);
+    });
+    
+    // ===== ENDPOINTS DE CONFIGURACIÓN =====
+    
+    // Escanear redes WiFi con información de redes guardadas - ULTRA OPTIMIZADO
+    server.on("/scan-wifi", HTTP_GET, [this](AsyncWebServerRequest *request) {
+        Serial.println("🔍 Solicitud de escaneo WiFi recibida");
+        
+        // Verificar memoria disponible
+        size_t freeHeap = ESP.getFreeHeap();
+        if (freeHeap < 30000) { // Menos de 30KB libre
+            Serial.printf("⚠️ Memoria insuficiente: %d bytes libres\n", freeHeap);
+            String json = "[{\"error\":true,\"message\":\"Memoria insuficiente para escaneo\"}]";
+            request->send(503, "application/json", json);
+            return;
+        }
+        
+        // Verificar intervalo de escaneo para evitar spam
+        unsigned long now = millis();
+        if (now - lastWiFiScan < WIFI_SCAN_INTERVAL) {
+            Serial.println("⚠️ Escaneo muy frecuente, esperando...");
+            String json = "[{\"waiting\":true,\"message\":\"Esperando intervalo de escaneo\"}]";
+            request->send(429, "application/json", json);
+            return;
+        }
+        lastWiFiScan = now;
+        
+        // Verificar si ya hay un escaneo en progreso
+        int scanStatus = WiFi.scanComplete();
+        if (scanStatus == WIFI_SCAN_RUNNING) {
+            Serial.println("⚠️ Escaneo ya en progreso");
+            String json = "[{\"scanning\":true,\"message\":\"Escaneo en progreso...\"}]";
+            request->send(200, "application/json", json);
+            return;
+        }
+        
+        // Limpiar escaneo anterior si existe
+        if (scanStatus >= 0) {
+            WiFi.scanDelete();
+        }
+        
+        Serial.printf("🔍 Iniciando escaneo WiFi (Heap libre: %d bytes)\n", ESP.getFreeHeap());
+        
+        // Alimentar watchdog antes del escaneo
+        esp_task_wdt_reset();
+        
+        // Escaneo asíncrono con configuración conservativa
+        int result = WiFi.scanNetworks(true, false, false, 300); // async=true, max_ms_per_chan=300ms
+        
+        if (result == WIFI_SCAN_RUNNING) {
+            String json = "[{\"scanning\":true,\"message\":\"Escaneo iniciado correctamente\"}]";
+            request->send(200, "application/json", json);
+        } else if (result == WIFI_SCAN_FAILED) {
+            Serial.println("❌ Error WIFI_SCAN_FAILED - Reinicializando WiFi...");
+            // Reinicializar WiFi mode para resolver SCAN_FAILED
+            WiFi.mode(WIFI_OFF);
+            delay(100);
+            WiFi.mode(WIFI_AP_STA);
+            delay(100);
+            
+            // Intentar una vez más
+            result = WiFi.scanNetworks(true, false, false, 300);
+            if (result == WIFI_SCAN_RUNNING) {
+                String json = "[{\"scanning\":true,\"message\":\"Escaneo reiniciado exitosamente\"}]";
+                request->send(200, "application/json", json);
+            } else {
+                String json = "[{\"error\":true,\"message\":\"Error persistente en escaneo WiFi\"}]";
+                request->send(500, "application/json", json);
+            }
+        } else {
+            Serial.printf("❌ Error iniciando escaneo: %d\n", result);
+            String json = "[{\"error\":true,\"message\":\"Error iniciando escaneo\"}]";
+            request->send(500, "application/json", json);
+        }
+        
+        Serial.println("🔍 Respuesta de escaneo enviada");
+    });
+    
+    // Endpoint separado para obtener resultados del escaneo - OPTIMIZADO
+    server.on("/wifi-results", HTTP_GET, [this](AsyncWebServerRequest *request) {
+        int n = WiFi.scanComplete();
+        
+        if (n == WIFI_SCAN_RUNNING) {
+            String json = "[{\"scanning\":true,\"message\":\"Escaneo en progreso...\"}]";
+            request->send(200, "application/json", json);
+            return;
+        }
+        
+        if (n == WIFI_SCAN_FAILED || n < 0) {
+            Serial.printf("❌ Error en escaneo: %d\n", n);
+            WiFi.scanDelete(); // Limpiar estado de error
+            String json = "[{\"error\":true,\"message\":\"Error en escaneo WiFi\"}]";
+            request->send(500, "application/json", json);
+            return;
+        }
+        
+        Serial.printf("📡 Procesando %d redes encontradas (Heap: %d bytes)\n", n, ESP.getFreeHeap());
+        
+        // Verificar memoria antes de construir JSON
+        size_t freeHeap = ESP.getFreeHeap();
+        if (freeHeap < 20000) {
+            Serial.printf("⚠️ Memoria baja durante procesamiento: %d bytes\n", freeHeap);
+            WiFi.scanDelete();
+            String json = "[{\"error\":true,\"message\":\"Memoria insuficiente\"}]";
+            request->send(503, "application/json", json);
+            return;
+        }
+        
+        // Usar StringBuilder más eficiente
+        String json;
+        json.reserve(n * 100 + 100); // Pre-asignar memoria estimada
+        json = "[";
+        
+        int validNetworks = 0;
+        int maxNetworks = min(n, 12); // Máximo 12 redes para evitar overflow
+        
+        for (int i = 0; i < maxNetworks; ++i) {
+            String ssid = WiFi.SSID(i);
+            if (ssid.length() == 0 || ssid.length() > 32) continue; // Saltar SSIDs inválidos
+            
+            // Escapar caracteres especiales en SSID
+            ssid.replace("\"", "\\\"");
+            ssid.replace("\\", "\\\\");
+            
+            if (validNetworks > 0) json += ",";
+            
+            bool isSaved = false; // Por ahora, simular que no están guardadas
+            int rssi = WiFi.RSSI(i);
+            String signal = "weak";
+            if (rssi > -50) signal = "excellent";
+            else if (rssi > -60) signal = "good";  
+            else if (rssi > -70) signal = "fair";
+            
+            json += "{";
+            json += "\"ssid\":\"" + ssid + "\",";
+            json += "\"rssi\":" + String(rssi) + ",";
+            json += "\"signal\":\"" + signal + "\",";
+            json += "\"encryption\":" + String(WiFi.encryptionType(i) != WIFI_AUTH_OPEN ? "true" : "false") + ",";
+            json += "\"saved\":" + String(isSaved ? "true" : "false");
+            if (isSaved) {
+                json += ",\"password\":\"***\"";
+            }
+            json += "}";
+            validNetworks++;
+            
+            // Verificar memoria durante el loop
+            if (ESP.getFreeHeap() < 15000) {
+                Serial.println("⚠️ Memoria baja durante construcción JSON, cortando lista");
+                break;
+            }
+        }
+        json += "]";
+        
+        Serial.printf("📡 Enviando %d redes válidas (JSON: %d bytes)\n", validNetworks, json.length());
+        
+        AsyncWebServerResponse *response = request->beginResponse(200, "application/json", json);
+        response->addHeader("Access-Control-Allow-Origin", "*");
+        response->addHeader("Cache-Control", "no-cache");
+        request->send(response);
+        
+        // Limpiar resultados del escaneo
+        WiFi.scanDelete();
+        
+        Serial.printf("📡 Resultados enviados (Heap final: %d bytes)\n", ESP.getFreeHeap());
+    });
+    
+    // Guardar configuración WiFi
+    server.on("/save-wifi", HTTP_POST, [this](AsyncWebServerRequest *request) {
+        Serial.println("💾 Guardando configuración WiFi...");
+        
+        String ssid = "";
+        String password = "";
+        
+        // Obtener parámetros del POST
+        if (request->hasParam("ssid", true)) {
+            ssid = request->getParam("ssid", true)->value();
+        }
+        if (request->hasParam("password", true)) {
+            password = request->getParam("password", true)->value();
+        }
+        
+        if (ssid.length() > 0) {
+            Serial.println("💾 Guardando WiFi: " + ssid + " (password: " + (password.length() > 0 ? "***" : "vacía") + ")");
+            
+            // Usar ConfigManager para guardar la configuración WiFi
+            Serial.println("🔧 Llamando config_manager.setWiFiCredentials...");
+            Serial.printf("🔧 SSID: '%s', Password length: %d\n", ssid.c_str(), password.length());
+            bool saveSuccess = config_manager.setWiFiCredentials(ssid, password);
+            Serial.printf("🔧 Resultado de setWiFiCredentials: %s\n", saveSuccess ? "true" : "false");
+            
+            // Verificar lo que se guardó
+            Serial.printf("🔧 SSID guardado: '%s'\n", config_manager.getWiFiSSID().c_str());
+            Serial.printf("🔧 Password guardado length: %d\n", config_manager.getWiFiPassword().length());
+            
+            if (saveSuccess) {
+                Serial.println("✅ Configuración WiFi guardada exitosamente: " + ssid);
+                
+                // Intentar conectar a la red WiFi configurada
+                Serial.println("🔄 Intentando conectar a: " + ssid);
+                WiFi.begin(ssid.c_str(), password.c_str());
+                
+                // Responder inmediatamente y conectar en segundo plano
+                AsyncWebServerResponse *response = request->beginResponse(200, "application/json", "{\"success\":true,\"message\":\"WiFi guardado exitosamente. Conectando...\"}");
+                response->addHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+                response->addHeader("Pragma", "no-cache");
+                response->addHeader("Expires", "0");
+                request->send(response);
+                Serial.println("✅ Respuesta HTTP SUCCESS enviada al cliente");
+                
+                // Programar chequeo de conexión después de un delay
+                connectionCheckTimer = millis() + 10000; // 10 segundos
+                checkingConnection = true;
+                
+            } else {
+                Serial.println("❌ Error guardando configuración WiFi en ConfigManager");
+                AsyncWebServerResponse *response = request->beginResponse(500, "application/json", "{\"success\":false,\"message\":\"Error: Credenciales WiFi inválidas\"}");
+                response->addHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+                response->addHeader("Pragma", "no-cache");
+                response->addHeader("Expires", "0");
+                request->send(response);
+                Serial.println("❌ Respuesta HTTP ERROR enviada al cliente");
+            }
+        } else {
+            request->send(400, "application/json", "{\"success\":false,\"message\":\"SSID requerido\"}");
+        }
+    });
+    
+    // Guardar configuración del sensor (incluyendo intervalo de sensado)
+    server.on("/save-sensor", HTTP_POST, [this](AsyncWebServerRequest *request) {
+        Serial.println("📏 Guardando configuración del sensor...");
+        
+        SensorConfig& sensorConfig = this->config_manager.getSensorConfig();
+        
+        if (request->hasParam("min", true)) {
+            sensorConfig.setMinDistance(request->getParam("min", true)->value().toFloat());
+        }
+        if (request->hasParam("max", true)) {
+            sensorConfig.setMaxHeight(request->getParam("max", true)->value().toFloat());
+        }
+        if (request->hasParam("interval", true)) {
+            this->config_manager.setUpdateInterval(request->getParam("interval", true)->value().toInt());
+        }
+        
+        if (this->config_manager.save()) {
+            Serial.println("✅ Configuración del sensor guardada");
+            Serial.println("📏 Min: " + String(sensorConfig.getMinDistance()) + "cm, Max: " + String(sensorConfig.getMaxHeight()) + "cm");
+            Serial.println("⏱️ Intervalo de actualización: " + String(this->config_manager.getUpdateInterval()) + " segundos");
+            request->send(200, "application/json", "{\"success\":true,\"message\":\"Configuración del sensor guardada\"}");
+        } else {
+            Serial.println("❌ Error guardando configuración del sensor");
+            request->send(500, "application/json", "{\"success\":false,\"message\":\"Error guardando sensor\"}");
+        }
+    });
+    
+    // Guardar configuración del AP y hostname
+    server.on("/save-ap", HTTP_POST, [this](AsyncWebServerRequest *request) {},
+    NULL, [this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+        Serial.println("📡 Guardando configuración del AP y hostname...");
+        
+        StaticJsonDocument<512> doc;
+        DeserializationError error = deserializeJson(doc, (char*)data);
+        
+        if (error) {
+            Serial.println("❌ Error parseando JSON");
+            request->send(400, "application/json", "{\"success\":false,\"message\":\"Error en formato JSON\"}");
+            return;
+        }
+        
+        String apSSID = doc["apSSID"].as<String>();
+        String apPassword = doc["apPassword"].as<String>();
+        String hostname = doc["hostname"].as<String>();
+        
+        if (hostname.isEmpty()) {
+            request->send(400, "application/json", "{\"success\":false,\"message\":\"Hostname requerido\"}");
+            return;
+        }
+        
+        if (apPassword.length() < 8 || apPassword.length() > 10) {
+            request->send(400, "application/json", "{\"success\":false,\"message\":\"Contraseña del AP debe tener entre 8 y 10 caracteres\"}");
+            return;
+        }
+        
+        Serial.printf("📡 Guardando AP: %s, Host: %s\n", apSSID.c_str(), hostname.c_str());
+        
+        // Guardar configuración del AP
+        this->config_manager.setAPSSID(apSSID);
+        this->config_manager.setAPPassword(apPassword);
+        this->config_manager.setHostname(hostname);
+        
+        if (this->config_manager.save()) {
+            // Actualizar hostname del ESP32
+            WiFi.setHostname(hostname.c_str());
+            
+            Serial.println("✅ Configuración del AP y hostname guardados");
+            request->send(200, "application/json", "{\"success\":true,\"message\":\"Configuración del AP guardada exitosamente\"}");
+        } else {
+            Serial.println("❌ Error guardando configuración");
+            request->send(500, "application/json", "{\"success\":false,\"message\":\"Error guardando configuración\"}");
+        }
+    });
+    
+    // Guardar configuración del sistema
+    server.on("/save-system", HTTP_POST, [this](AsyncWebServerRequest *request) {
+        Serial.println("⚙️ Guardando configuración del sistema...");
+        
+        bool success = true;
+        String message = "Configuración del sistema guardada";
+        
+        // Procesar auto-sleep time si se proporciona
+        if (request->hasParam("autoSleepTime", true)) {
+            String autoSleepStr = request->getParam("autoSleepTime", true)->value();
+            uint16_t autoSleepTime = autoSleepStr.toInt();
+            
+            if (autoSleepTime >= 3 && autoSleepTime <= 300) { // 3 segundos a 5 minutos
+                config_manager.setAutoSleepTime(autoSleepTime);
+                display_manager.setAutoSleepTime(autoSleepTime);
+                Serial.printf("⏰ Auto-sleep configurado: %d segundos\n", autoSleepTime);
+            } else {
+                success = false;
+                message = "Valor de auto-sleep inválido (3-300 segundos)";
+            }
+        }
+        
+        // Procesar otros parámetros del sistema aquí si es necesario
+        
+        if (success) {
+            bool saveSuccess = config_manager.save();
+            if (saveSuccess) {
+                Serial.println("✅ Configuración del sistema guardada");
+                request->send(200, "application/json", "{\"success\":true,\"message\":\"" + message + "\"}");
+            } else {
+                Serial.println("❌ Error guardando configuración del sistema");
+                request->send(500, "application/json", "{\"success\":false,\"message\":\"Error guardando configuración\"}");
+            }
+        } else {
+            Serial.println("❌ Error en parámetros del sistema");
+            request->send(400, "application/json", "{\"success\":false,\"message\":\"" + message + "\"}");
+        }
+    });
+    
+    // Obtener configuración actual
+    server.on("/get-config", HTTP_GET, [this](AsyncWebServerRequest *request) {
+        Serial.println("� Obteniendo configuración actual...");
+        
+        // Cargar configuraciones reales
+        const NetworkConfig& networkConfig = this->config_manager.getNetworkConfig();
+        const SensorConfig& sensorConfig = this->config_manager.getSensorConfig();
+        const HardwareBoardConfig& boardConfig = this->config_manager.getSystemConfig();
+        
+        String json = "{";
+        json += "\"wifi\":{";
+        json += "\"ssid\":\"\",";
+        json += "\"password\":\"\"";
+        json += "},";
+        json += "\"sensor\":{";
+        json += "\"type\":\"HC-SR04\",";
+        json += "\"min\":" + String(sensorConfig.getMinDistance()) + ",";
+        json += "\"max\":" + String(sensorConfig.getMaxHeight()) + ",";
+        json += "\"interval\":" + String(this->config_manager.getUpdateInterval());
+        json += "},";
+        json += "\"ap\":{";
+        json += "\"ssid\":\"" + this->config_manager.getAPSSID() + "\",";
+        json += "\"hostname\":\"" + this->config_manager.getHostname() + "\"";
+        json += "},";
+        json += "\"system\":{";
+        json += "\"location\":\"\",";
+        json += "\"interval\":" + String(this->config_manager.getUpdateInterval()) + ",";
+        json += "\"autoSleepTime\":" + String(this->config_manager.getAutoSleepTime());
+        json += "}";
+        json += "}";
+        
+        request->send(200, "application/json", json);
+    });
+    
+    // Probar conexión WiFi con información detallada
+    server.on("/test-connection", HTTP_GET, [](AsyncWebServerRequest *request) {
+        Serial.println("🧪 Probando conexión WiFi...");
+        
+        String json = "{";
+        if (WiFi.status() == WL_CONNECTED) {
+            json += "\"success\":true,";
+            json += "\"message\":\"Conexión exitosa\",";
+            json += "\"details\":{";
+            json += "\"ssid\":\"" + WiFi.SSID() + "\",";
+            json += "\"ip\":\"" + WiFi.localIP().toString() + "\",";
+            json += "\"rssi\":" + String(WiFi.RSSI()) + ",";
+            json += "\"gateway\":\"" + WiFi.gatewayIP().toString() + "\",";
+            json += "\"dns\":\"" + WiFi.dnsIP().toString() + "\"";
+            json += "}";
+        } else {
+            String status_text = "Desconocido";
+            switch(WiFi.status()) {
+                case WL_IDLE_STATUS: status_text = "WiFi en espera"; break;
+                case WL_NO_SSID_AVAIL: status_text = "SSID no disponible"; break;
+                case WL_SCAN_COMPLETED: status_text = "Escaneo completado"; break;
+                case WL_CONNECT_FAILED: status_text = "Conexión fallida"; break;
+                case WL_CONNECTION_LOST: status_text = "Conexión perdida"; break;
+                case WL_DISCONNECTED: status_text = "Desconectado"; break;
+            }
+            json += "\"success\":false,";
+            json += "\"message\":\"Sin conexión WiFi\",";
+            json += "\"details\":{";
+            json += "\"status\":\"" + status_text + "\",";
+            json += "\"ap_mode\":true,";
+            json += "\"ap_ip\":\"" + WiFi.softAPIP().toString() + "\"";
+            json += "}";
+        }
+        json += "}";
+        
+        request->send(200, "application/json", json);
+    });
+    
+
+    
+    // Control manual de pantalla (encender/apagar)
+    server.on("/toggle-display", HTTP_POST, [this](AsyncWebServerRequest *request) {
+        Serial.println("🖥️ Toggle pantalla OLED...");
+        
+        if (this->display_manager.isDisplaySleeping()) {
+            this->display_manager.wakeUpDisplay();
+            request->send(200, "application/json", "{\"success\":true,\"message\":\"Pantalla encendida\",\"status\":\"on\"}");
+        } else {
+            this->display_manager.forceDisplaySleep();
+            request->send(200, "application/json", "{\"success\":true,\"message\":\"Pantalla apagada\",\"status\":\"off\"}");
+        }
+    });
+
+    // Reiniciar dispositivo
+    server.on("/restart", HTTP_POST, [](AsyncWebServerRequest *request) {
+        Serial.println("🔄 Reiniciando dispositivo...");
+        request->send(200, "application/json", "{\"success\":true,\"message\":\"Reiniciando...\"}");
+        delay(1000);
+        ESP.restart();
+    });
+    
+    // ========== MULTI-WIFI ENDPOINTS ==========
+    
+    // Obtener lista de redes WiFi guardadas
+    server.on("/get-wifi-networks", HTTP_GET, [this](AsyncWebServerRequest *request) {
+        Serial.println("📡 Obteniendo lista de redes WiFi...");
+        
+        StaticJsonDocument<1024> doc;
+        doc["success"] = true;
+        
+        JsonArray networks = doc.createNestedArray("networks");
+        const std::vector<WiFiNetwork>& wifiNetworks = config_manager.getNetworkConfig().getWiFiNetworks();
+        
+        for (const WiFiNetwork& network : wifiNetworks) {
+            JsonObject networkObj = networks.createNestedObject();
+            networkObj["ssid"] = network.ssid;
+            networkObj["is_default"] = network.is_default;
+            // No enviamos la password por seguridad
+        }
+        
+        String response;
+        serializeJson(doc, response);
+        
+        AsyncWebServerResponse *httpResponse = request->beginResponse(200, "application/json", response);
+        httpResponse->addHeader("Cache-Control", "no-cache");
+        request->send(httpResponse);
+    });
+    
+    // Agregar nueva red WiFi
+    server.on("/add-wifi-network", HTTP_POST, [this](AsyncWebServerRequest *request) {},
+    NULL, [this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+        Serial.println("➕ Agregando nueva red WiFi...");
+        
+        StaticJsonDocument<512> doc;
+        DeserializationError error = deserializeJson(doc, (char*)data);
+        
+        if (error) {
+            Serial.println("❌ Error parseando JSON");
+            request->send(400, "application/json", "{\"success\":false,\"message\":\"Error en formato JSON\"}");
+            return;
+        }
+        
+        String ssid = doc["ssid"].as<String>();
+        String password = doc["password"].as<String>();
+        bool is_default = doc["is_default"].as<bool>();
+        
+        if (ssid.isEmpty()) {
+            request->send(400, "application/json", "{\"success\":false,\"message\":\"SSID requerido\"}");
+            return;
+        }
+        
+        Serial.printf("➕ Agregando red: %s (default: %s)\n", ssid.c_str(), is_default ? "sí" : "no");
+        
+        bool success = config_manager.getNetworkConfig().addWiFiNetwork(ssid, password, is_default);
+        
+        if (success) {
+            config_manager.save();
+            Serial.println("✅ Red WiFi agregada exitosamente");
+            request->send(200, "application/json", "{\"success\":true,\"message\":\"Red agregada exitosamente\"}");
+        } else {
+            Serial.println("❌ Error agregando red WiFi");
+            request->send(500, "application/json", "{\"success\":false,\"message\":\"Error agregando red WiFi\"}");
+        }
+    });
+    
+    // Establecer red predeterminada
+    server.on("/set-default-network", HTTP_POST, [this](AsyncWebServerRequest *request) {},
+    NULL, [this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+        Serial.println("🎯 Estableciendo red predeterminada...");
+        
+        StaticJsonDocument<256> doc;
+        DeserializationError error = deserializeJson(doc, (char*)data);
+        
+        if (error) {
+            Serial.println("❌ Error parseando JSON");
+            request->send(400, "application/json", "{\"success\":false,\"message\":\"Error en formato JSON\"}");
+            return;
+        }
+        
+        String ssid = doc["ssid"].as<String>();
+        
+        if (ssid.isEmpty()) {
+            request->send(400, "application/json", "{\"success\":false,\"message\":\"SSID requerido\"}");
+            return;
+        }
+        
+        Serial.printf("🎯 Estableciendo como predeterminada: %s\n", ssid.c_str());
+        
+        bool success = config_manager.getNetworkConfig().setDefaultWiFiNetwork(ssid);
+        
+        if (success) {
+            config_manager.save();
+            Serial.println("✅ Red predeterminada establecida");
+            request->send(200, "application/json", "{\"success\":true,\"message\":\"Red predeterminada establecida\"}");
+        } else {
+            Serial.println("❌ Error estableciendo red predeterminada");
+            request->send(500, "application/json", "{\"success\":false,\"message\":\"Red no encontrada\"}");
+        }
+    });
+    
+    // Eliminar red WiFi
+    server.on("/remove-wifi-network", HTTP_POST, [this](AsyncWebServerRequest *request) {},
+    NULL, [this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+        Serial.println("🗑️ Eliminando red WiFi...");
+        
+        StaticJsonDocument<256> doc;
+        DeserializationError error = deserializeJson(doc, (char*)data);
+        
+        if (error) {
+            Serial.println("❌ Error parseando JSON");
+            request->send(400, "application/json", "{\"success\":false,\"message\":\"Error en formato JSON\"}");
+            return;
+        }
+        
+        String ssid = doc["ssid"].as<String>();
+        
+        if (ssid.isEmpty()) {
+            request->send(400, "application/json", "{\"success\":false,\"message\":\"SSID requerido\"}");
+            return;
+        }
+        
+        Serial.printf("🗑️ Eliminando red: %s\n", ssid.c_str());
+        
+        bool success = config_manager.getNetworkConfig().removeWiFiNetwork(ssid);
+        
+        if (success) {
+            config_manager.save();
+            Serial.println("✅ Red WiFi eliminada");
+            request->send(200, "application/json", "{\"success\":true,\"message\":\"Red eliminada exitosamente\"}");
+        } else {
+            Serial.println("❌ Error eliminando red WiFi");
+            request->send(500, "application/json", "{\"success\":false,\"message\":\"Red no encontrada\"}");
+        }
+    });
+    
+    // Guardar toda la configuración y reiniciar con WiFi predeterminado
+    server.on("/save-all-and-restart", HTTP_POST, [this](AsyncWebServerRequest *request) {
+        Serial.println("💾🔄 Guardando toda la configuración y reiniciando...");
+        
+        // Guardar toda la configuración
+        bool saveSuccess = config_manager.save();
+        
+        if (saveSuccess) {
+            Serial.println("✅ Configuración guardada. Reiniciando con WiFi predeterminado...");
+            request->send(200, "application/json", "{\"success\":true,\"message\":\"Configuración guardada. Reiniciando...\"}");
+            
+            // Delay breve para que se envíe la respuesta
+            delay(1000);
+            
+            // Reiniciar dispositivo
+            ESP.restart();
+        } else {
+            Serial.println("❌ Error guardando configuración");
+            request->send(500, "application/json", "{\"success\":false,\"message\":\"Error guardando configuración\"}");
+        }
+    });
+    
+    // Factory reset - Restaurar configuración por defecto
+    server.on("/factory-reset", HTTP_POST, [this](AsyncWebServerRequest *request) {
+        Serial.println("🗑️ Iniciando factory reset...");
+        
+        // Restaurar configuraciones por defecto
+        // Restaurar configuración por defecto
+        this->config_manager.reset();
+        this->config_manager.save();
+        
+        Serial.println("✅ Factory reset completado");
+        request->send(200, "application/json", "{\"success\":true,\"message\":\"Configuración restablecida. Reiniciando...\"}");
+        
+        // Reiniciar después de 2 segundos
+        delay(2000);
+        ESP.restart();
+    });
+    
+    // Servir archivos estáticos
+    server.serveStatic("/", SPIFFS, "/");
+    
+    // ===== INICIALIZAR SERVIDOR =====
+    server.begin();
+    Serial.printf("✅ Web Server iniciado en modo: %s\n", 
+                  portal_active ? "PORTAL CAUTIVO" : "SENSOR NORMAL");
+}
+
+void AppManager::setupSmartRoutes() {
+    Serial.println("🧠 Configurando rutas inteligentes...");
+    
+    // ===== RUTA PRINCIPAL INTELIGENTE "/" =====
+    server.on("/", HTTP_GET, [this](AsyncWebServerRequest *request) {
+        Serial.printf("📄 Petición a ruta principal - Modo: %s\n", 
+                      portal_active ? "PORTAL" : "SENSOR");
+        
+        if (portal_active) {
+            // MODO PORTAL CAUTIVO
+            Serial.println("🌐 Sirviendo portal cautivo");
+            if (SPIFFS.exists("/captive_portal.html")) {
+                request->send(SPIFFS, "/captive_portal.html", "text/html");
+            } else {
+                request->send(500, "text/plain", "❌ Error: captive_portal.html no encontrado");
+            }
+        } else {
+            // MODO SENSOR NORMAL
+            Serial.println("🌊 Sirviendo dashboard del sensor");
+            if (SPIFFS.exists("/index.html")) {
+                request->send(SPIFFS, "/index.html", "text/html");
+            } else {
+                request->send(500, "text/plain", "❌ Error: index.html no encontrado");
+            }
+        }
+    });
+    
+    // ===== API STATUS INTELIGENTE =====
+    server.on("/api/status", HTTP_GET, [this](AsyncWebServerRequest *request) {
+        String json;
+        if (portal_active) {
+            json = "{\"mode\":\"portal\",\"wifi_connected\":false,\"ap_active\":true,\"ap_ip\":\"" + 
+                   WiFi.softAPIP().toString() + "\"}";
+        } else {
+            json = "{\"mode\":\"sensor\",\"wifi_connected\":true,\"ip\":\"" + 
+                   WiFi.localIP().toString() + "\",\"ssid\":\"" + WiFi.SSID() + "\"}";
+        }
+        request->send(200, "application/json", json);
+    });
+}
+
+void AppManager::setupConditionalRoutes() {
+    Serial.println("🔀 Configurando rutas condicionales...");
+    
+    // ===== RUTAS EXCLUSIVAS DEL PORTAL CAUTIVO =====
+    server.on("/scan-wifi", HTTP_GET, [this](AsyncWebServerRequest *request) {
+        if (!portal_active) {
+            request->send(404, "text/plain", "❌ Scan WiFi solo disponible en modo portal");
+            return;
+        }
+        handleScanWiFi(request);
+    });
+    
+    server.on("/wifi-results", HTTP_GET, [this](AsyncWebServerRequest *request) {
+        if (!portal_active) {
+            request->send(404, "text/plain", "❌ WiFi results solo disponible en modo portal");
+            return;
+        }
+        handleWiFiResults(request);
+    });
+    
+    // ===== RUTAS EXCLUSIVAS DEL MODO SENSOR =====
+    server.on("/api/sensor-data", HTTP_GET, [this](AsyncWebServerRequest *request) {
+        if (portal_active) {
+            request->send(404, "text/plain", "❌ Sensor data solo disponible en modo sensor");
+            return;
+        }
+        handleSensorData(request);
+    });
+    
+    server.on("/api/toggle-display", HTTP_POST, [this](AsyncWebServerRequest *request) {
+        if (portal_active) {
+            request->send(404, "text/plain", "❌ Display control solo disponible en modo sensor");
+            return;
+        }
+        handleToggleDisplay(request);
+    });
+}
+
+void AppManager::setupCaptiveDetectionRoutes() {
+    Serial.println("📡 Configurando detección de portal cautivo...");
+    
+    // ===== DETECCIÓN ANDROID =====
+    server.on("/generate_204", HTTP_GET, [this](AsyncWebServerRequest *request) {
+        Serial.println("📱 Android detectó portal cautivo: /generate_204");
+        if (portal_active) {
+            request->send(200, "text/html", "<script>window.location.href='/';</script>");
+        } else {
+            request->send(204); // No content en modo sensor
+        }
+    });
+    
+    server.on("/gen_204", HTTP_GET, [this](AsyncWebServerRequest *request) {
+        Serial.println("📱 Android detectó portal cautivo: /gen_204");
+        if (portal_active) {
+            request->send(200, "text/html", "<script>window.location.href='/';</script>");
+        } else {
+            request->send(204);
+        }
+    });
+    
+    // ===== DETECCIÓN iOS =====
+    server.on("/hotspot-detect.html", HTTP_GET, [this](AsyncWebServerRequest *request) {
+        Serial.println("🍎 iOS detectó portal cautivo: /hotspot-detect.html");
+        if (portal_active) {
+            request->send(200, "text/html", "<script>window.location.href='/';</script>");
+        } else {
+            request->send(200, "text/html", "<html><body>Success</body></html>");
+        }
+    });
+    
+    // ===== CATCH-ALL INTELIGENTE =====
+    server.onNotFound([this](AsyncWebServerRequest *request) {
+        String url = request->url();
+        Serial.printf("❓ Ruta no encontrada: %s (Modo: %s)\n", url.c_str(), 
+                      portal_active ? "PORTAL" : "SENSOR");
+        
+        if (portal_active) {
+            // En modo portal, redirigir todo al portal
+            String redirectHTML = "<!DOCTYPE html><html><head><title>Portal Cautivo</title></head>"
+                                 "<body><script>window.location.href='/';</script>"
+                                 "<p>Redirigiendo al portal...</p></body></html>";
+            request->send(200, "text/html", redirectHTML);
+        } else {
+            // En modo sensor, devolver 404 normal
+            request->send(404, "text/plain", "❌ Página no encontrada");
+        }
+    });
+}
+
+void AppManager::initializeServices() {
+    Serial.println("🔧 Inicializando servicios específicos...");
+    
+    if (portal_active) {
+        Serial.println("🌐 Modo Portal - Servicios básicos");
+        // En modo portal solo lo esencial
+        
+    } else {
+        Serial.println("🌊 Modo Sensor - Servicios completos");
+        // En modo sensor, habilitar WebSerial y OTA
+        WebSerial.begin(&server);
+        Serial.println("✅ WebSerial habilitado");
+        
+        ElegantOTA.begin(&server);
+        Serial.println("✅ WebOTA habilitado");
+    }
+}
+
+void AppManager::apCallback() {
+    Serial.println("=== AP CALLBACK - INFO INMEDIATA ===");
+    
+    // Obtener configuración actual del AP
+    String ap_ssid = config_manager.getAPSSID();
+    String ap_password = config_manager.getAPPassword();
+    String ap_ip = WiFi.softAPIP().toString();
+    String ap_mac = WiFi.softAPmacAddress();
+    
+    Serial.println("AP SSID: " + ap_ssid);
+    Serial.println("AP Password: " + ap_password);
+    Serial.println("AP IP: " + ap_ip);
+    Serial.println("AP MAC: " + ap_mac);
+    
+    // Mostrar en display con nueva información
+    display_manager.clear();
+    display_manager.setFont(ArialMT_Plain_10);
+    display_manager.drawString(0, 0, "PORTAL CAUTIVO");
+    display_manager.drawString(0, 12, "Red: " + ap_ssid); // Mostrar SSID completo en una línea
+    display_manager.drawString(0, 24, "Contraseña: " + ap_password);
+    display_manager.drawString(0, 36, "IP: " + ap_ip);
+    // MAC completa en una línea
+    display_manager.drawString(0, 48, "MAC: " + ap_mac); // MAC completa
+    display_manager.display();
+    
+    Serial.println("Portal disponible en: http://" + ap_ip);
+}
+
+void AppManager::loop() {
+    // Reset watchdog para evitar reinicios por timeout
+    esp_task_wdt_reset();
+    
+    drd.loop();
+    
+    // Procesar DNS requests para portal cautivo
+    dnsServer.processNextRequest();
+    
+    // Monitoreo de memoria cada 10 segundos
+    static unsigned long lastMemCheck = 0;
+    if (millis() - lastMemCheck > 10000) {
+        size_t freeHeap = ESP.getFreeHeap();
+        if (freeHeap < 25000) {
+            Serial.printf("⚠️ ADVERTENCIA: Memoria baja: %d bytes\n", freeHeap);
+            // Forzar limpieza de escaneos WiFi si la memoria está baja
+            if (WiFi.scanComplete() >= 0) {
+                WiFi.scanDelete();
+                Serial.println("🧹 Limpieza de escaneo WiFi por memoria baja");
+            }
+        }
+        lastMemCheck = millis();
+    }
+    
+    // Chequeo de conexión WiFi después de guardar configuración
+    if (checkingConnection && millis() > connectionCheckTimer) {
+        checkingConnection = false;
+        
+        if (WiFi.status() == WL_CONNECTED) {
+            Serial.println("✅ Conectado exitosamente a WiFi!");
+            Serial.println("📍 IP asignada: " + WiFi.localIP().toString());
+            wifi_connected = true;
+            
+            // ACTIVAR MODO SENSOR: Habilitar auto-sleep después de conectar WiFi
+            display_manager.enableAutoSleep(true);
+            Serial.println("🖥️ Modo sensor activado - Auto-sleep HABILITADO");
+            
+            // Opcional: Desactivar AP después de conectar
+            // WiFi.softAPdisconnect(true);
+            // Serial.println("🔌 Access Point desactivado, solo modo Cliente WiFi");
+        } else {
+            Serial.println("❌ No se pudo conectar a WiFi. Reintentando...");
+            Serial.printf("📊 Estado WiFi: %d\n", WiFi.status());
+        }
+    }
+    
+    // Manejar botón PRG para despertar pantalla
+    display_manager.handlePRGButton();
+    
+    // Chequear auto-sleep de pantalla (solo en modo sensor)
+    display_manager.checkAutoSleep();
+    
+    // ===== LECTURA DEL SENSOR (solo en modo normal) =====
+    if (!portal_active) {
+        static unsigned long lastSensorRead = 0;
+        if (millis() - lastSensorRead > 5000) { // Cada 5 segundos
+            Serial.println("🌊 Leyendo sensor...");
+            sensor_manager.readSensors();
+            
+            // Actualizar pantalla con datos del sensor
+            updateSensorDisplay();
+            lastSensorRead = millis();
+        }
+    }
+    
+    yield(); // Permitir que otras tareas del sistema se ejecuten
+}
+
+bool AppManager::isWiFiConnected() {
+    return wifi_connected;
+}
+
+String AppManager::getDeviceIP() {
+    return WiFi.softAPIP().toString();
+}
+
+void AppManager::restart() {
+    Serial.println("Reiniciando...");
+    ESP.restart();
+}
+
+// ===== FUNCIONES DE MANEJO DE REQUESTS =====
+
+void AppManager::handleScanWiFi(AsyncWebServerRequest *request) {
+    Serial.println("🔍 Procesando solicitud de escaneo WiFi");
+    
+    // Verificar memoria disponible
+    size_t freeHeap = ESP.getFreeHeap();
+    if (freeHeap < 30000) { // Menos de 30KB libre
+        Serial.printf("⚠️ Memoria insuficiente: %d bytes libres\n", freeHeap);
+        String json = "[{\"error\":true,\"message\":\"Memoria insuficiente para escaneo\"}]";
+        request->send(503, "application/json", json);
+        return;
+    }
+    
+    // Verificar intervalo de escaneo para evitar spam
+    unsigned long now = millis();
+    if (now - lastWiFiScan < WIFI_SCAN_INTERVAL) {
+        Serial.println("⚠️ Escaneo muy frecuente, esperando...");
+        String json = "[{\"waiting\":true,\"message\":\"Esperando intervalo de escaneo\"}]";
+        request->send(429, "application/json", json);
+        return;
+    }
+    lastWiFiScan = now;
+    
+    // Verificar si ya hay un escaneo en progreso
+    int scanStatus = WiFi.scanComplete();
+    if (scanStatus == WIFI_SCAN_RUNNING) {
+        Serial.println("⚠️ Escaneo ya en progreso");
+        String json = "[{\"scanning\":true,\"message\":\"Escaneo en progreso...\"}]";
+        request->send(200, "application/json", json);
+        return;
+    }
+    
+    // Limpiar escaneo anterior si existe
+    if (scanStatus >= 0) {
+        WiFi.scanDelete();
+    }
+    
+    Serial.printf("🔍 Iniciando escaneo WiFi (Heap libre: %d bytes)\n", ESP.getFreeHeap());
+    
+    // Alimentar watchdog antes del escaneo
+    esp_task_wdt_reset();
+    
+    // Escaneo asíncrono con configuración conservativa
+    int result = WiFi.scanNetworks(true, false, false, 300); // async=true, max_ms_per_chan=300ms
+    
+    if (result == WIFI_SCAN_RUNNING) {
+        String json = "[{\"scanning\":true,\"message\":\"Escaneo iniciado correctamente\"}]";
+        request->send(200, "application/json", json);
+    } else {
+        Serial.printf("❌ Error iniciando escaneo: %d\n", result);
+        String json = "[{\"error\":true,\"message\":\"Error iniciando escaneo WiFi\"}]";
+        request->send(500, "application/json", json);
+    }
+}
+
+void AppManager::handleWiFiResults(AsyncWebServerRequest *request) {
+    // Esta función ya existe en el código, necesito encontrarla
+    Serial.println("📡 Procesando solicitud de resultados WiFi");
+    
+    int scanResult = WiFi.scanComplete();
+    
+    if (scanResult == WIFI_SCAN_RUNNING) {
+        String json = "[{\"scanning\":true,\"message\":\"Escaneo aún en progreso...\"}]";
+        request->send(200, "application/json", json);
+        return;
+    }
+    
+    if (scanResult == WIFI_SCAN_FAILED || scanResult < 0) {
+        String json = "[{\"error\":true,\"message\":\"Error en escaneo WiFi\"}]";
+        request->send(500, "application/json", json);
+        return;
+    }
+    
+    // Construir JSON con resultados
+    String json = "[";
+    int maxNetworks = min(scanResult, 15); // Limitar a 15 redes
+    
+    for (int i = 0; i < maxNetworks; i++) {
+        if (i > 0) json += ",";
+        json += "{";
+        json += "\"ssid\":\"" + WiFi.SSID(i) + "\",";
+        json += "\"rssi\":" + String(WiFi.RSSI(i)) + ",";
+        json += "\"encryption\":" + String(WiFi.encryptionType(i) != WIFI_AUTH_OPEN);
+        json += "}";
+    }
+    json += "]";
+    
+    WiFi.scanDelete(); // Limpiar resultados
+    request->send(200, "application/json", json);
+    Serial.printf("✅ Enviados %d resultados de escaneo\n", maxNetworks);
+}
+
+void AppManager::handleSensorData(AsyncWebServerRequest *request) {
+    Serial.println("🌊 Procesando solicitud de datos del sensor");
+    
+    // Aquí iría la lógica para obtener datos del sensor
+    // Por ahora, datos de ejemplo
+    String json = "{";
+    json += "\"water_level\":" + String(75.5) + ",";
+    json += "\"percentage\":" + String(65) + ",";
+    json += "\"tank_height\":" + String(115.0) + ",";
+    json += "\"distance\":" + String(39.2) + ",";
+    json += "\"status\":\"normal\",";
+    json += "\"timestamp\":" + String(millis());
+    json += "}";
+    
+    request->send(200, "application/json", json);
+}
+
+void AppManager::handleToggleDisplay(AsyncWebServerRequest *request) {
+    Serial.println("🖥️ Procesando toggle de pantalla OLED");
+    
+    if (display_manager.isDisplaySleeping()) {
+        display_manager.wakeUpDisplay();
+        request->send(200, "application/json", "{\"display\":\"awake\",\"message\":\"Pantalla encendida\"}");
+    } else {
+        display_manager.forceDisplaySleep();
+        request->send(200, "application/json", "{\"display\":\"sleeping\",\"message\":\"Pantalla apagada\"}");
+    }
+}
+
+void AppManager::updateSensorDisplay() {
+    // Solo actualizar pantalla si no está durmiendo y estamos en modo sensor
+    if (portal_active || display_manager.isDisplaySleeping()) {
+        return;
+    }
+    
+    Serial.println("🖥️ Actualizando pantalla con datos del sensor");
+    
+    // Obtener datos del sensor (esto puede necesitar ajustes según tu SensorManager)
+    // Por ahora uso datos de ejemplo
+    float waterLevel = 75.5;  // cm
+    int percentage = 65;      // %
+    String status = "Normal";
+    
+    display_manager.clear();
+    display_manager.setFont(ArialMT_Plain_10);
+    
+    // Línea 1: Título
+    display_manager.drawString(0, 0, "SENSOR NIVEL AGUA");
+    
+    // Línea 2: WiFi info
+    display_manager.drawString(0, 12, "WiFi: " + WiFi.SSID());
+    
+    // Línea 3: Nivel de agua
+    display_manager.drawString(0, 24, "Nivel: " + String(waterLevel, 1) + " cm");
+    
+    // Línea 4: Porcentaje
+    display_manager.drawString(0, 36, "Lleno: " + String(percentage) + "%");
+    
+    // Línea 5: Estado
+    display_manager.drawString(0, 48, "Estado: " + status);
+    
+    display_manager.display();
+}
+
+

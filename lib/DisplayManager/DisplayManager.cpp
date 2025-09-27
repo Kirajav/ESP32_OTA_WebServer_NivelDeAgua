@@ -6,13 +6,20 @@
 #define OLED_RST 16
 #define Vext 21
 
-DisplayManager::DisplayManager() : _ledFadeActive(false), _lastFadeUpdate(0), _fadeDirection(1), _fadeValue(0) {}
+DisplayManager::DisplayManager() : 
+    _ledFadeActive(false), _lastFadeUpdate(0), _fadeDirection(1), _fadeValue(0), 
+    _autoSleepTime(30), _lastActivity(0), _displaySleeping(false), _autoSleepEnabled(false),
+    _countdownActive(false), _countdownSeconds(0), _countdownStart(0), 
+    _lastButtonState(HIGH), _lastButtonPress(0) {}
 
 void DisplayManager::begin() {
     // Configurar LED blanco
     ledcSetup(LED_CHANNEL, LED_FREQ, LED_RESOLUTION);
     ledcAttachPin(LED_PIN, LED_CHANNEL);
     setLedState(false); // Empezar apagado
+    
+    // Configurar botón PRG con pull-up interno
+    pinMode(PRG_BUTTON_PIN, INPUT_PULLUP);
     
     pinMode(Vext, OUTPUT);
     digitalWrite(Vext, LOW); // Encender OLED
@@ -31,10 +38,18 @@ void DisplayManager::begin() {
     Heltec.display->flipScreenVertically();
     Heltec.display->setFont(ArialMT_Plain_10);
     Heltec.display->clear();
+    
+    // Mostrar splash screen por 3 segundos
+    showSplashScreen();
+    delay(3000);
+    
     showInitialMessage();
     
     // LED encendido con la pantalla
     setLedState(true);
+    
+    // Inicializar timer de auto-sleep
+    _lastActivity = millis();
 }
 
 void DisplayManager::showInitialMessage() {
@@ -173,4 +188,137 @@ void DisplayManager::updateFadeEffect() {
         
         ledcWrite(LED_CHANNEL, _fadeValue);
     }
+}
+
+// Auto-sleep control methods
+void DisplayManager::setAutoSleepTime(uint16_t seconds) {
+    _autoSleepTime = seconds;
+    Serial.printf("⏰ Auto-sleep configurado: %d segundos\n", seconds);
+}
+
+uint16_t DisplayManager::getAutoSleepTime() const {
+    return _autoSleepTime;
+}
+
+void DisplayManager::enableAutoSleep(bool enable) {
+    _autoSleepEnabled = enable;
+    if (enable) {
+        _lastActivity = millis();
+        Serial.println("⏰ Auto-sleep HABILITADO (modo sensor)");
+    } else {
+        _countdownActive = false;
+        Serial.println("⏰ Auto-sleep DESHABILITADO (modo portal)");
+    }
+}
+
+void DisplayManager::checkAutoSleep() {
+    if (!_autoSleepEnabled || _displaySleeping) return;
+    
+    unsigned long currentTime = millis();
+    unsigned long timeSinceActivity = currentTime - _lastActivity;
+    
+    // Si estamos en countdown activo
+    if (_countdownActive) {
+        unsigned long countdownElapsed = (currentTime - _countdownStart) / 1000;
+        int remainingSeconds = 3 - countdownElapsed;
+        
+        if (remainingSeconds != _countdownSeconds) {
+            _countdownSeconds = remainingSeconds;
+            
+            if (_countdownSeconds > 0) {
+                // Mostrar countdown
+                Heltec.display->clear();
+                Heltec.display->setFont(ArialMT_Plain_16);
+                Heltec.display->setTextAlignment(TEXT_ALIGN_CENTER);
+                Heltec.display->drawString(64, 15, F("Apagando pantalla"));
+                Heltec.display->drawString(64, 35, "en " + String(_countdownSeconds) + "...");
+                Heltec.display->display();
+            } else {
+                // Apagar pantalla
+                Serial.println("� Pantalla apagada por auto-sleep");
+                displayOff();
+                setLedState(false);
+                _displaySleeping = true;
+                _countdownActive = false;
+            }
+        }
+    } else {
+        // Verificar si es tiempo de iniciar countdown
+        if (timeSinceActivity >= (_autoSleepTime - 3) * 1000) {
+            _countdownActive = true;
+            _countdownStart = currentTime;
+            _countdownSeconds = 3;
+            Serial.println("⏰ Iniciando countdown de auto-sleep");
+        }
+    }
+}
+
+void DisplayManager::wakeUpDisplay() {
+    if (_displaySleeping) {
+        displayOn();
+        setLedState(true);
+        _displaySleeping = false;
+        _countdownActive = false;
+        _countdownSeconds = 0;
+        _lastActivity = millis(); // Reiniciar timer
+        Serial.println("🔆 Pantalla despertada manualmente");
+        
+        // Limpiar pantalla para evitar mostrar mensaje de "Apagando..."
+        Heltec.display->clear();
+        Heltec.display->display();
+    }
+}
+
+void DisplayManager::forceDisplaySleep() {
+    if (!_displaySleeping) {
+        // Mostrar countdown rápido
+        for (int i = 3; i > 0; i--) {
+            Heltec.display->clear();
+            Heltec.display->setFont(ArialMT_Plain_16);
+            Heltec.display->setTextAlignment(TEXT_ALIGN_CENTER);
+            Heltec.display->drawString(64, 15, F("Apagando pantalla"));
+            Heltec.display->drawString(64, 35, "en " + String(i) + "...");
+            Heltec.display->display();
+            delay(1000);
+        }
+        
+        displayOff();
+        setLedState(false);
+        _displaySleeping = true;
+        _countdownActive = false;
+        Serial.println("😴 Pantalla apagada manualmente");
+    }
+}
+
+bool DisplayManager::isDisplaySleeping() const {
+    return _displaySleeping;
+}
+
+void DisplayManager::handlePRGButton() {
+    bool currentButtonState = digitalRead(PRG_BUTTON_PIN);
+    unsigned long currentTime = millis();
+    
+    // Detectar flanco descendente (botón presionado) con debounce
+    if (currentButtonState == LOW && _lastButtonState == HIGH && 
+        (currentTime - _lastButtonPress > 200)) {
+        
+        _lastButtonPress = currentTime;
+        
+        if (_displaySleeping) {
+            wakeUpDisplay();
+        }
+    }
+    
+    _lastButtonState = currentButtonState;
+}
+
+void DisplayManager::showSplashScreen() {
+    Heltec.display->clear();
+    Heltec.display->setFont(ArialMT_Plain_16);
+    Heltec.display->setTextAlignment(TEXT_ALIGN_CENTER);
+    Heltec.display->drawString(64, 10, F("SENSOR NIVEL"));
+    Heltec.display->drawString(64, 26, F("DE AGUA"));
+    Heltec.display->setFont(ArialMT_Plain_10);
+    Heltec.display->drawString(64, 45, F("v2.0 - DataTech"));
+    Heltec.display->display();
 }

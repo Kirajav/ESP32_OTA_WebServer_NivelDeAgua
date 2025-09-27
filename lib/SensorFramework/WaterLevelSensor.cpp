@@ -3,9 +3,11 @@
 WaterLevelSensor::WaterLevelSensor(uint8_t triggerPin, uint8_t echoPin, ConfigManager* configManager)
     : m_distanceSensor(triggerPin, echoPin), m_configManager(configManager), m_distanciaCm(-1.0), m_mensajeError("No_init") {}
 
-void WaterLevelSensor::begin() {
+bool WaterLevelSensor::begin() {
     // La librería HCSR04 no requiere un método begin(),
     // la inicialización se hace en el constructor.
+    m_mensajeError = "OK";
+    return true;
 }
 
 void WaterLevelSensor::update() {
@@ -60,20 +62,20 @@ String WaterLevelSensor::calculateLitros() const {
     }
 
     // Si la distancia es menor o igual a la mínima del sensor, se considera lleno
-    if (m_distanciaCm <= m_configManager->getDistanciaMin()) {
+    if (m_distanciaCm <= m_configManager->getMinDistance()) {
         if (shouldDebug) {
-            Serial.println(String(m_configManager->getCapacidad(), 1) + "L (LLENO)");
+            Serial.println(String(m_configManager->getCapacity(), 1) + "L (LLENO)");
         }
-        return String(m_configManager->getCapacidad(), 1);
+        return String(m_configManager->getCapacity(), 1);
     }
 
-    double alturaActualAgua = m_configManager->getAlturaMax() - m_distanciaCm;
+    double alturaActualAgua = m_configManager->getMaxHeight() - m_distanciaCm;
 
     if (alturaActualAgua < 0) {
         alturaActualAgua = 0;
     }
 
-    double alturaTotalAgua = m_configManager->getAlturaMax();
+    double alturaTotalAgua = m_configManager->getMaxHeight();
     
     if (alturaTotalAgua <= 0) {
         if (shouldDebug) {
@@ -87,11 +89,36 @@ String WaterLevelSensor::calculateLitros() const {
     if (porcentajeLlenado > 100.0) porcentajeLlenado = 100.0;
     if (porcentajeLlenado < 0.0) porcentajeLlenado = 0.0;
 
-    double litros = (m_configManager->getCapacidad() * porcentajeLlenado) / 100.0;
+    double litros = (m_configManager->getCapacity() * porcentajeLlenado) / 100.0;
     
     if (shouldDebug) {
         Serial.println(String(litros, 1) + "L (" + String(porcentajeLlenado, 1) + "%)");
     }
     
     return String(litros, 1);
+}
+
+float WaterLevelSensor::getPercentage() const {
+    if (m_distanciaCm < 0) {
+        return 0.0; // Error de lectura
+    }
+    
+    // Si la distancia es menor o igual a la mínima del sensor, se considera lleno
+    if (m_distanciaCm <= m_configManager->getMinDistance()) {
+        return 100.0;
+    }
+    
+    double alturaActualAgua = m_configManager->getMaxHeight() - m_distanciaCm;
+    double alturaTotalAgua = m_configManager->getMaxHeight() - m_configManager->getMinDistance();
+    
+    if (alturaTotalAgua <= 0) {
+        return 0.0; // Error en configuración
+    }
+    
+    double porcentajeLlenado = (alturaActualAgua / alturaTotalAgua) * 100.0;
+    
+    if (porcentajeLlenado > 100.0) porcentajeLlenado = 100.0;
+    if (porcentajeLlenado < 0.0) porcentajeLlenado = 0.0;
+    
+    return porcentajeLlenado;
 }

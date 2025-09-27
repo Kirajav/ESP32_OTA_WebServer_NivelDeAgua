@@ -6,24 +6,37 @@
 #include <WebSerial.h>
 #include <ArduinoJson.h>
 #include "SensorManager.h"
-#include "ConfigManager.h"
+#include "ConfigManagerV2.h"
 #include "DisplayManager.h"
-#include "SystemStatus.h"
+#include "HardwareBoardStatus.h"
+#include "ESPNowManager.h"
+#include "GoogleHomeIntegration.h"
+#include "AlexaIntegration.h"
+#include "TuyaIntegration.h"
 
 class WebManager {
 public:
-    WebManager(AsyncWebServer* server, SensorManager* sensorManager, ConfigManager* configManager, DisplayManager* displayManager, SystemStatus* systemStatus);
+    WebManager(AsyncWebServer* server, SensorManager* sensorManager, ConfigManager* configManager, DisplayManager* displayManager, HardwareBoardStatus* systemStatus);
     void begin();
     void setWiFiResetCallback(void (*callback)());  // Nuevo callback para reset WiFi
+    
+    // ESP-NOW endpoints
+    void setupESPNowEndpoints();
+    void handleMultiSensorData();
+    void handleESPNowStatus();
 
 private:
     AsyncWebServer* _server;
     SensorManager* _sensorManager;
     ConfigManager* _configManager;
     DisplayManager* _displayManager;
-    SystemStatus* _systemStatus;
+    HardwareBoardStatus* _systemStatus;
     AsyncWebSocket _ws;
     void (*_wifiResetCallback)();  // Callback para reset WiFi
+    ESPNowManager* _espNowManager;  // ESP-NOW manager
+    GoogleHomeIntegration* _googleHome;  // Google Home integration
+    AlexaIntegration* _alexa;  // Alexa integration
+    TuyaIntegration* _tuya;  // Tuya Smart integration
 
     void initWebSocket();
     void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len);

@@ -1,6 +1,6 @@
 #include "OTAUpdater.h"
 
-OTAUpdater::OTAUpdater(DisplayManager* displayManager, SystemStatus* systemStatus) : 
+OTAUpdater::OTAUpdater(DisplayManager* displayManager, HardwareBoardStatus* systemStatus) : 
 _displayManager(displayManager), _systemStatus(systemStatus) {
 }
 

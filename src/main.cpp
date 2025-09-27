@@ -3,7 +3,9 @@
 AppManager app;
 
 void setup() {
-  app.begin();
+  Serial.begin(115200);
+  Serial.println("=== INICIANDO SISTEMA DIRECTO ===");
+  app.initialize();
 }
 
 void loop() {

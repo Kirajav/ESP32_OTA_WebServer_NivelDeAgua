@@ -4,17 +4,17 @@
 #include <Arduino.h>
 #include <ElegantOTA.h>
 #include "DisplayManager.h"
-#include "SystemStatus.h"
+#include "HardwareBoardStatus.h"
 
 class OTAUpdater {
 public:
-    OTAUpdater(DisplayManager* displayManager, SystemStatus* systemStatus);
+    OTAUpdater(DisplayManager* displayManager, HardwareBoardStatus* systemStatus);
     void begin(AsyncWebServer* server);
     void loop();
 
 private:
     DisplayManager* _displayManager;
-    SystemStatus* _systemStatus;
+    HardwareBoardStatus* _systemStatus;
 };
 
 #endif // OTA_UPDATER_H
