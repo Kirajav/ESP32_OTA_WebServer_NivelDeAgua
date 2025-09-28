@@ -2,7 +2,7 @@
 
 const char* ConfigManagerV2::CONFIG_FILE = "/config.json";
 
-ConfigManagerV2::ConfigManager() {
+ConfigManagerV2::ConfigManagerV2() {
     // Domain objects are initialized with their defaults
 }
 

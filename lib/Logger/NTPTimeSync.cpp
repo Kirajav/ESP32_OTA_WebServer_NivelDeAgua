@@ -220,3 +220,71 @@ uint32_t NTPTimeSync::getEstimatedTimestamp() const {
 bool NTPTimeSync::isUsingEstimatedTime() const {
     return !isTimeSynced;
 }
+
+// Time utilities implementations - non-duplicated ones only
+String NTPTimeSync::getCurrentDateString() const {
+    struct tm timeinfo;
+    if (!getLocalTime(&timeinfo)) {
+        return "__/__/____";  // Evitar trigrafos
+    }
+    
+    char buffer[16];
+    strftime(buffer, sizeof(buffer), "%d/%m/%Y", &timeinfo);
+    return String(buffer);
+}
+
+String NTPTimeSync::getCurrentDateTimeString() const {
+    struct tm timeinfo;
+    if (!getLocalTime(&timeinfo)) {
+        return "__/__ __:__";  // Evitar trigrafos
+    }
+    
+    char buffer[32];
+    strftime(buffer, sizeof(buffer), "%d/%m/%Y %H:%M:%S", &timeinfo);
+    return String(buffer);
+}
+
+String NTPTimeSync::getFormattedTime(const char* format) const {
+    struct tm timeinfo;
+    if (!getLocalTime(&timeinfo)) {
+        return "N/A";
+    }
+    
+    char buffer[64];
+    strftime(buffer, sizeof(buffer), format, &timeinfo);
+    return String(buffer);
+}
+
+// Compact display formats for OLED
+String NTPTimeSync::getCompactTime() const {
+    struct tm timeinfo;
+    if (!getLocalTime(&timeinfo)) {
+        return "__:__";  // Evitar trigrafos
+    }
+    
+    char buffer[8];
+    strftime(buffer, sizeof(buffer), "%H:%M", &timeinfo);
+    return String(buffer);
+}
+
+String NTPTimeSync::getCompactDate() const {
+    struct tm timeinfo;
+    if (!getLocalTime(&timeinfo)) {
+        return "__/__";  // Evitar trigrafos
+    }
+    
+    char buffer[8];
+    strftime(buffer, sizeof(buffer), "%d/%m", &timeinfo);
+    return String(buffer);
+}
+
+String NTPTimeSync::getCompactDateTime() const {
+    struct tm timeinfo;
+    if (!getLocalTime(&timeinfo)) {
+        return "__/__ __:__";  // Evitar trigrafos
+    }
+    
+    char buffer[16];
+    strftime(buffer, sizeof(buffer), "%d/%m %H:%M", &timeinfo);
+    return String(buffer);
+}
