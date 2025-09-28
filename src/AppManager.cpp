@@ -304,9 +304,26 @@ void AppManager::setupWebServer() {
 }
 
 void AppManager::setupStaticFiles() {
-    // Archivos estáticos que siempre están disponibles
+    // Archivos estáticos que siempre están disponibles (legacy)
     server.serveStatic("/style.css", SPIFFS, "/style.css");
     server.serveStatic("/app.js", SPIFFS, "/app.js");
+    
+    // === ESTRUCTURA ORGANIZADA ===
+    // Captive Portal CSS y JS
+    server.serveStatic("/web/captive_portal/css/", SPIFFS, "/web/captive_portal/css/");
+    server.serveStatic("/web/captive_portal/js/", SPIFFS, "/web/captive_portal/js/");
+    
+    // ESP-NOW Manager CSS y JS  
+    server.serveStatic("/web/esp_now/css/", SPIFFS, "/web/esp_now/css/");
+    server.serveStatic("/web/esp_now/js/", SPIFFS, "/web/esp_now/js/");
+    
+    // Dashboard CSS y JS (ya organizados)
+    server.serveStatic("/web/dashboard/assets/", SPIFFS, "/web/dashboard/assets/");
+    
+    // Assets (solo medios: imágenes, videos, etc.)
+    server.serveStatic("/web/captive_portal/assets/", SPIFFS, "/web/captive_portal/assets/");
+    server.serveStatic("/web/esp_now/assets/", SPIFFS, "/web/esp_now/assets/");
+    server.serveStatic("/web/shared/", SPIFFS, "/web/shared/");
     
     // Imágenes del sensor (disponibles en ambos modos)
     server.serveStatic("/imagen_vacio.jpg", SPIFFS, "/imagen_vacio.jpg", "image/jpeg");
