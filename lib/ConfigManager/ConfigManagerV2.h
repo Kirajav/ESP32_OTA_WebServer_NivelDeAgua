@@ -24,7 +24,7 @@
  * - Cleaner code organization
  * - English naming conventions with Spanish backward compatibility
  */
-class ConfigManager {
+class ConfigManagerV2 {
 private:
     NetworkConfig network_config;
     SensorConfig sensor_config;
@@ -39,7 +39,7 @@ private:
     bool saveToFile();
     
 public:
-    ConfigManager();
+    ConfigManagerV2();
     
     // Initialization
     bool begin();

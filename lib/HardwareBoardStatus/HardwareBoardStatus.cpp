@@ -2,7 +2,7 @@
 #include "../DisplayManager/DisplayManager.h"
 #include "../ConfigManager/ConfigManagerV2.h"
 
-HardwareBoardStatus::HardwareBoardStatus(DisplayManager* displayManager, ConfigManager* configManager) : 
+HardwareBoardStatus::HardwareBoardStatus(DisplayManager* displayManager, ConfigManagerV2* configManager) : 
 _displayManager(displayManager), _configManager(configManager) {
 }
 

@@ -35,7 +35,7 @@ public:
 private:
     DisplayManager display_manager;
     SensorManager sensor_manager;
-    ConfigManager config_manager;
+    ConfigManagerV2 config_manager;
     bool wifi_connected;
     bool portal_active;
     bool forcePortalMode;  // Para forzar portal cautivo con doble reset
