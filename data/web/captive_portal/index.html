@@ -1,854 +1,427 @@
-<!DOCTYPE html><!DOCTYPE html>
-
-<html lang="es"><html lang="es">
-
-<head><head>
-
-    <!-- =============================================== -->    <meta charset="UTF-8">
-
-    <!-- CONFIGURACIÓN BÁSICA DEL DOCUMENTO           -->    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-
-    <!-- =============================================== -->    <title id="page-title">Portal de Configuración</title>
-
-    <meta charset="UTF-8">    <link rel="stylesheet" href="css/style.css">
-
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"></head>
-
-    <title id="page-title">Portal de Configuración</title><body>
-
-        <svg xmlns="http://www.w3.org/2000/svg" style="display: none;">
-
-    <!-- =============================================== -->            --primary-color: #03a9f4;
-
-    <!-- RECURSOS EXTERNOS                            -->            --success-color: #4caf50;
-
-    <!-- =============================================== -->            --error-color: #f44336;
-
-    <!-- Estilos CSS del portal de configuración -->            --warning-color: #ff9800;
-
-    <link rel="stylesheet" href="css/style.css">            --gold-color: #ffd700;
-
-</head>            
-
-<body>            --bg-color-dark: #121212;
-
-    <!-- =============================================== -->            --card-bg-dark: rgba(28, 28, 30, 0.75);
-
-    <!-- ICONOS SVG REUTILIZABLES                     -->            --text-color-dark: #e0e0e0;
-
-    <!-- =============================================== -->            --text-secondary-dark: #a0a0b0;
-
-    <!-- Librería de iconos embebidos para uso interno -->            --border-color-dark: rgba(255, 255, 255, 0.1);
-
-    <svg xmlns="http://www.w3.org/2000/svg" style="display: none;">
-
-        <!-- Icono WiFi para indicadores de red -->            --bg-color-light: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
-
-        <symbol id="wifi-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">            --card-bg-light: rgba(255, 255, 255, 0.7);
-
-            <path d="M5 12.55a11 11 0 0 1 14 0"></path>            --text-color-light: #1a1a2e;
-
-            <path d="M1.42 9a16 16 0 0 1 21.16 0"></path>                });
-
-            <path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path>        }
-
-            <line x1="12" y1="20" x2="12.01" y2="20"></line>
-
-        </symbol>        function loadSavedNetworks() {
-
-                    fetch('/api/wifi/saved')
-
-        <!-- Icono ojo abierto para mostrar contraseñas -->                .then(response => response.json())
-
-        <symbol id="eye-open-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">                .then(data => {
-
-            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>                    const savedList = document.getElementById('saved-wifi-list');
-
-            <circle cx="12" cy="12" r="3"></circle>                    if (!data.networks || data.networks.length === 0) {
-
-        </symbol>                        savedList.innerHTML = '<div class="wifi-saved-item">📡 <span data-translate="no_saved_networks">No hay redes guardadas</span></div>';
-
-                                return;
-
-        <!-- Icono ojo cerrado para ocultar contraseñas -->                    }
-
-        <symbol id="eye-closed-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">                    
-
-            <path d="M2 12C5 18, 19 18, 22 12"></path>                    savedList.innerHTML = data.networks.map(network => `
-
-            <path d="M6 16l-2 4"></path>                        <div class="wifi-saved-item ${network.is_default ? 'wifi-saved-default' : ''}">
-
-            <path d="M12 17l0 4"></path>                            <div class="wifi-details">
-
-            <path d="M18 16l2 4"></path>                                <div class="wifi-name">${network.ssid}</div>
-
-        </symbol>                                <div class="wifi-saved-status">
-
-    </svg>                                    ${network.is_default ? '<span data-translate="default_network">Predeterminada</span>' : '<span data-translate="saved_network">Guardada</span>'}
-
-                                </div>
-
-    <!-- =============================================== -->                            </div>
-
-    <!-- CONTENEDOR PRINCIPAL DE LA APLICACIÓN        -->                            <div class="wifi-saved-actions">
-
-    <!-- =============================================== -->                                ${!network.is_default ? `<button class="button button-secondary" onclick="setDefaultNetwork('${network.ssid}')">⭐</button>` : ''}
-
-    <div class="page-wrapper">                                <button class="button button-danger" onclick="removeNetwork('${network.ssid}')">🗑️</button>
-
-        <!-- =========================================== -->                            </div>
-
-        <!-- NAVEGACIÓN LATERAL                        -->                        </div>
-
-        <!-- =========================================== -->                    `).join('');
-
-        <!-- Menú de navegación principal del portal -->                })
-
-        <nav id="side-nav">                .catch(error => {
-
-            <div>                    console.error('Error loading saved networks:', error);
-
-                <!-- Enlaces de navegación principales -->                    document.getElementById('saved-wifi-list').innerHTML = '<div class="wifi-saved-item">❌ Error al cargar redes guardadas</div>';
-
-                <a href="#" class="nav-item active" onclick="showSection('wifi-config')">                });
-
-                    <span class="nav-icon">📶</span>        }
-
-                    <span class="nav-text" data-translate="wifi_config">WiFi</span>
-
-                </a>        function setDefaultNetwork(ssid) {
-
-                            fetch('/api/wifi/default', {
-
-                <a href="#" class="nav-item" onclick="showSection('sensor-config')">                method: 'POST',
-
-                    <span class="nav-icon">📊</span>                headers: { 'Content-Type': 'application/json' },
-
-                    <span class="nav-text" data-translate="sensor_config">Sensor</span>                body: JSON.stringify({ ssid: ssid })
-
-                </a>            })
-
-                            .then(response => response.json())
-
-                <a href="#" class="nav-item" onclick="showSection('ap-config')">            .then(data => {
-
-                    <span class="nav-icon">🌐</span>                if (data.success) {
-
-                    <span class="nav-text" data-translate="ap_config">Punto de Acceso</span>                    showToast(`"${ssid}" establecida como predeterminada`, 'success');
-
-                </a>                    loadSavedNetworks();
-
-                                } else {
-
-                <a href="#" class="nav-item" onclick="showSection('system-config')">                    showToast(data.message || 'Error al establecer red predeterminada', 'error');
-
-                    <span class="nav-icon">⚙️</span>                }
-
-                    <span class="nav-text" data-translate="system_config">Sistema</span>            })
-
-                </a>            .catch(error => {
-
-                                console.error('Error setting default network:', error);
-
-                <!-- Separador visual -->                showToast('Error al establecer red predeterminada', 'error');
-
-                <div class="nav-divider"></div>            });
-
-                        }
-
-                <a href="#" class="nav-item" onclick="showSection('actions')">
-
-                    <span class="nav-icon">🔧</span>        function removeNetwork(ssid) {
-
-                    <span class="nav-text" data-translate="actions">Acciones</span>            if (!confirm(`¿Eliminar la red "${ssid}"?`)) return;
-
-                </a>            
-
-            </div>            fetch('/api/wifi/remove', {
-
-                            method: 'POST',
-
-            <!-- Pie de navegación con información de versión y controles -->                headers: { 'Content-Type': 'application/json' },
-
-            <div class="nav-footer">                body: JSON.stringify({ ssid: ssid })
-
-                <div class="version-info">v2.1.0</div>            })
-
-                <button class="theme-toggle" onclick="toggleTheme()" data-translate="toggle_theme">🌙 Tema</button>            .then(response => response.json())
-
-            </div>            .then(data => {
-
-        </nav>                if (data.success) {
-
-                    showToast(`Red "${ssid}" eliminada`, 'success');
-
-        <!-- =========================================== -->                    loadSavedNetworks();
-
-        <!-- ÁREA DE CONTENIDO PRINCIPAL              -->                } else {
-
-        <!-- =========================================== -->                    showToast(data.message || 'Error al eliminar la red', 'error');
-
-        <main>                }
-
-            <!-- ======================================= -->            })
-
-            <!-- SECCIÓN: CONFIGURACIÓN WIFI          -->            .catch(error => {
-
-            <!-- ======================================= -->                console.error('Error removing network:', error);
-
-            <section id="wifi-config" class="content-section active">                showToast('Error al eliminar la red', 'error');
-
-                <!-- Encabezado de sección -->            });
-
-                <div class="section-header">        }
-
-                    <h1 class="section-title" data-translate="wifi_config">Configuración WiFi</h1>
-
-                    <p class="section-subtitle" data-translate="wifi_config_desc">Gestiona las conexiones de red inalámbrica del sensor</p>        function addWiFiNetwork() {    --text-secondary-light: #5a5a6e;
-
-                </div>            --border-color-light: silver;
-
-        }
-
-                <!-- Redes WiFi guardadas -->        
-
-                <div class="card">        body {
-
-                    <h3 data-translate="saved_networks">Redes Guardadas</h3>            --bg-color: var(--bg-color-dark);
-
-                    <div id="saved-wifi-list" class="wifi-saved-list">            --card-bg: var(--card-bg-dark);
-
-                        <!-- Se carga dinámicamente via JavaScript -->            --text-color: var(--text-color-dark);
-
-                    </div>            --text-secondary: var(--text-secondary-dark);
-
-                </div>            --border-color: var(--border-color-dark);
-
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title id="page-title">Portal de Configuración</title>
+    <style>
+        :root {
+            --primary-color: #03a9f4;
+            --success-color: #4caf50;
+            --error-color: #f44336;
+            --warning-color: #ff9800;
+            --gold-color: #ffd700;
             
-
-                <!-- Escaner de redes disponibles -->            font-family: 'Segoe UI', 'Roboto', sans-serif;
-
-                <div class="card">            background: var(--bg-color);
-
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">            color: var(--text-color);
-
-                        <h3 data-translate="available_networks">Redes Disponibles</h3>            line-height: 1.6;
-
-                        <button class="btn btn-secondary" onclick="scanWiFiNetworks()">            overflow-x: hidden;
-
-                            <span class="btn-icon">🔍</span>            transition: background 0.5s ease, color 0.5s ease;
-
-                            <span data-translate="scan_networks">Escanear</span>        }
-
-                        </button>
-
-                    </div>        body.light-theme {
-
-                    <div id="wifi-networks" class="wifi-networks">            --bg-color: var(--bg-color-light);
-
-                        <!-- Se carga dinámicamente via JavaScript -->            --card-bg: var(--card-bg-light);
-
-                    </div>            --text-color: var(--text-color-light);
-
-                </div>            --text-secondary: var(--text-secondary-light);
-
-            --border-color: var(--border-color-light);
-
-                <!-- Formulario para agregar red manualmente -->        }
-
-                <div class="card">
-
-                    <h3 data-translate="add_new_network">Agregar Nueva Red</h3>        * { margin: 0; padding: 0; box-sizing: border-box; }
-
-                    <form id="wifi-form" onsubmit="submitWiFiConfig(event)">        html { scroll-behavior: smooth; }
-
-                        <div class="form-group">        
-
-                            <label class="form-label" data-translate="network_name">Nombre de Red (SSID)</label>        .page-wrapper { display: flex; padding: 20px; gap: 20px; align-items: flex-start;}
-
-                            <input type="text" id="wifi-ssid" class="form-input" placeholder="Nombre de la red WiFi" required>        
-
-                        </div>        #side-nav {
-
-                                    position: sticky;
-
-                        <div class="form-group">            top: 20px;
-
-                            <label class="form-label" data-translate="password">Contraseña</label>            min-height: calc(100vh - 40px);
-
-                            <div class="password-field">            background: var(--card-bg);
-
-                                <input type="password" id="wifi-password" class="form-input" placeholder="Contraseña de la red">            border: 1px solid var(--border-color);
-
-                                <button type="button" class="password-toggle" onclick="togglePassword('wifi-password')">            border-radius: 15px;
-
-                                    <svg><use href="#eye-closed-icon"></use></svg>            backdrop-filter: blur(12px);
-
-                                </button>            -webkit-backdrop-filter: blur(12px);
-
-                            </div>            padding: 20px 10px;
-
-                            <small class="form-help" data-translate="wifi_password_help">Mínimo 8 caracteres para mayor seguridad.</small>            transition: all 0.5s ease;
-
-                        </div>            width: 240px;
-
-                                    display: flex;
-
-                        <div class="form-group">            flex-direction: column;
-
-                            <label class="checkbox-label">        }
-
-                                <input type="checkbox" id="wifi-default" checked>        #side-nav:hover { border-color: var(--gold-color); }
-
-                                <span data-translate="make_default">Establecer como predeterminada</span>        #side-nav .nav-brand { text-align: center; margin-bottom: 20px; padding: 0 10px; }
-
-                            </label>        #side-nav .nav-brand h1 { font-size: 1.5em; color: var(--primary-color); margin-bottom: 5px; }
-
-                        </div>        #side-nav .nav-brand p { font-size: 0.8em; color: var(--text-secondary); }
-
-                                #side-nav ul { list-style: none; padding-bottom: 15px; margin-bottom: 15px; border-bottom: 1px solid var(--border-color);}
-
-                        <button type="submit" class="btn">        #side-nav ul li a { display: flex; align-items: center; gap: 15px; padding: 12px 15px; margin: 5px 0; border-radius: 10px; color: var(--text-secondary); text-decoration: none; font-weight: 500; transition: all 0.3s ease; border: 1px solid transparent; }
-
-                            <span class="btn-icon">➕</span>        #side-nav ul li a .nav-icon { font-size: 1.2em; width: 20px; text-align: center; }
-
-                            <span data-translate="add_network">Agregar Red</span>        #side-nav ul li a:hover, #side-nav ul li a:active { background: var(--primary-color); color: white; transform: translateX(5px); border-color: var(--gold-color); }
-
-                        </button>        #side-nav ul li a.active { background: var(--primary-color); color: white; }
-
-                    </form>        
-
-                </div>        main { flex: 1; display: flex; flex-direction: column; gap: 20px; position: relative; padding-top: 80px; }
-
-            </section>        
-
-        .top-controls { position: absolute; top: 0; right: 0; display: flex; gap: 15px; z-index: 100; padding: 10px; }
-
-            <!-- ======================================= -->        #theme-toggle { font-size: 20px; cursor: pointer; transition: transform 0.2s; }
-
-            <!-- SECCIÓN: CONFIGURACIÓN SENSOR        -->        #theme-toggle:hover { transform: scale(1.1); }
-
-            <!-- ======================================= -->        
-
-            <section id="sensor-config" class="content-section">        .card { background: var(--card-bg); border: 1px solid var(--gold-color); border-radius: 15px; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); padding: 25px; scroll-margin-top: 90px; transition: all 0.5s ease; }
-
-                <div class="section-header">        .card:hover { border-color: var(--primary-color); }
-
-                    <h1 class="section-title" data-translate="sensor_config">Configuración del Sensor</h1>        .card h2 { color: var(--primary-color); margin-bottom: 20px; display: flex; align-items: center; gap: 10px; font-size: 1.4em; }
-
-                    <p class="section-subtitle" data-translate="sensor_config_desc">Parámetros de medición y calibración del tanque</p>        
-
-                </div>        .form-group { margin-bottom: 18px; }
-
-        .form-group label { display: block; margin-bottom: 8px; font-weight: 500; color: var(--text-secondary); }
-
-                <!-- Configuración física del tanque -->        .form-group label:has(input[type="checkbox"]) { display: flex; align-items: center; gap: 10px; font-weight: normal; color: var(--text-color); cursor: pointer; }
-
-                <div class="card">        .form-group label:has(input[type="checkbox"]) input { width: auto; }
-
-                    <h3 data-translate="tank_configuration">Configuración del Tanque</h3>        .form-group input, .form-group select { width: 100%; padding: 12px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.1); border-radius: 8px; font-size: 1em; color: var(--text-color); transition: all 0.3s ease; }
-
-                    <form id="sensor-form" onsubmit="submitSensorConfig(event)">        body.light-theme .form-group input, body.light-theme .form-group select { background: rgba(255,255,255,0.2); }
-
-                        <div class="two-column">        .form-group input:focus, .form-group select:focus { outline: none; border-color: var(--primary-color); background: rgba(0,0,0,0.2); }
-
-                            <div class="form-group">        .form-help { display: block; margin-top: 8px; color: var(--text-secondary); font-size: 0.8em; font-style: italic; line-height: 1.3; }
-
-                                <label class="form-label" data-translate="tank_height">Altura del Tanque (cm)</label>        
-
-                                <input type="number" id="tank-height" class="form-input" min="10" max="500" step="0.1" required>        .button { background: var(--primary-color); color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-size: 1em; font-weight: 600; transition: all 0.3s ease; display: inline-flex; align-items: center; gap: 8px; }
-
-                                <small class="form-help" data-translate="tank_height_help">Distancia total desde el fondo del tanque hasta la parte superior.</small>        .button:hover { transform: translateY(-2px); box-shadow: 0 4px 15px rgba(3, 169, 244, 0.3); }
-
-                            </div>        .button-secondary { background: #6c757d; }
-
-                                    .button-danger { background: var(--error-color); }
-
-                            <div class="form-group">        
-
-                                <label class="form-label" data-translate="tank_capacity">Capacidad del Tanque (litros)</label>        .language-dropdown { position: relative; display: inline-block; }
-
-                                <input type="number" id="tank-capacity" class="form-input" min="1" max="10000" step="0.1" required>        .language-current { font-size: 20px; cursor: pointer; transition: transform 0.2s; display: flex; align-items: center; justify-content: center; }
-
-                                <small class="form-help" data-translate="tank_capacity_help">Volumen máximo de agua cuando el tanque está lleno.</small>        .language-current:hover { transform: scale(1.1); }
-
-                            </div>        .language-menu { position: absolute; top: 120%; right: 0; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 10px; padding: 5px; display: flex; flex-direction: column; gap: 5px; opacity: 0; visibility: hidden; transform: translateY(-10px); transition: all 0.3s ease; }
-
-                        </div>        .language-dropdown.open .language-menu { opacity: 1; visibility: visible; transform: translateY(0); }
-
-                                .language-option { font-size: 20px; cursor: pointer; padding: 5px; border-radius: 5px; transition: background 0.2s; display: flex; align-items: center; justify-content: center; }
-
-                        <div class="form-group">        .language-option:hover { background: var(--primary-color); }
-
-                            <label class="form-label" data-translate="min_distance">Distancia Mínima del Sensor (cm)</label>        .language-option .flag-icon, .language-current .flag-icon { width: 1.8em; height: 1.8em; border-radius: 50%; object-fit: cover; box-shadow: 0 0 5px rgba(0,0,0,0.2); }
-
-                            <input type="number" id="min-distance" class="form-input" min="2" max="100" step="0.1" value="5" required>        
-
-                            <small class="form-help" data-translate="min_distance_help">Distancia mínima que el sensor puede medir con precisión.</small>        .icon { width: 1.2em; height: 1.2em; vertical-align: middle; }
-
-                        </div>
-
-                                .password-container { position: relative; display: flex; align-items: center; }
-
-                        <div class="form-group">        .password-toggle { position: absolute; right: 1px; top: 1px; bottom: 1px; background: transparent; border: none; border-radius: 0 7px 7px 0; cursor: pointer; padding: 0 12px; color: var(--text-secondary); font-size: 1.2em; display: flex; align-items: center; }
-
-                            <label class="form-label" data-translate="container_type">Tipo de Contenedor</label>        .password-toggle .icon { width: 1.4em; height: 1.4em; }
-
-                            <select id="container-type" class="form-input" required>
-
-                                <option value="tinaco" data-translate="tank">Tinaco</option>        .actions-menu { margin-top: auto; padding-top: 15px; }
-
-                                <option value="cisterna" data-translate="cistern">Cisterna</option>        .actions-menu-title { text-align: center; font-weight: 600; color: var(--text-secondary); margin-bottom: 10px; text-transform: uppercase; font-size: 0.8em; letter-spacing: 1px; }
-
-                                <option value="deposito" data-translate="reservoir">Depósito</option>        .action-button { display: flex; align-items: center; width: 100%; background: rgba(0,0,0,0.1); border: 1px solid var(--border-color); border-radius: 10px; padding: 10px; margin-bottom: 8px; text-align: left; color: var(--text-color); cursor: pointer; transition: all 0.3s ease; }
-
-                                <option value="otro" data-translate="other">Otro</option>        body.light-theme .action-button { background: rgba(255,255,255,0.2); }
-
-                            </select>        .action-button:hover { transform: translateY(-2px); border-color: var(--gold-color); box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
-
-                            <small class="form-help" data-translate="container_type_help">Contenedor sobre el cual se va a sensar su volumen.</small>        .action-button:active { transform: translateY(0); box-shadow: none; transition: all 0.1s ease; }
-
-                        </div>        .action-button .action-icon { font-size: 1.5em; margin-right: 12px; }
-
-                                .action-button .action-text .action-title { font-weight: 600; font-size: 0.9em; display: block; }
-
-                        <button type="submit" class="btn">        .action-button .action-text .action-description { font-size: 0.75em; color: var(--text-secondary); display: block; }
-
-                            <span class="btn-icon">💾</span>        .action-button.danger:hover { border-color: var(--error-color); }
-
-                            <span data-translate="save_sensor_config">Guardar Configuración</span>        .action-button.secondary:hover { border-color: #888; }
-
-                        </button>
-
-                    </form>        .action-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 15px; }
-
-                </div>        .action-cell { background: rgba(0,0,0,0.1); border: 1px solid var(--border-color); border-radius: 10px; padding: 15px; text-align: center; transition: all 0.3s ease; }
-
-        body.light-theme .action-cell { background: rgba(255,255,255,0.2); }
-
-                <!-- Calibración y pruebas -->        .action-cell:hover { transform: translateY(-5px); box-shadow: 0 8px 20px rgba(0,0,0,0.2); }
-
-                <div class="card">        .action-cell .action-icon { font-size: 2em; margin-bottom: 10px; color: var(--primary-color); }
-
-                    <h3 data-translate="calibration_tests">Calibración y Pruebas</h3>        .action-cell .action-title { font-weight: 600; font-size: 1.1em; margin-bottom: 5px; color: var(--text-color); }
-
-                    <div class="btn-group">        .action-cell .action-description { font-size: 0.8em; color: var(--text-secondary); margin-bottom: 15px; min-height: 30px; }
-
-                        <button class="btn btn-secondary" onclick="startCalibration()">        .action-cell .button { width: 100%; justify-content: center; }
-
-                            <span class="btn-icon">🎯</span>
-
-                            <span data-translate="start_calibration">Iniciar Calibración</span>        #mobile-actions-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1099; opacity: 0; visibility: hidden; transition: opacity 0.3s ease; }
-
-                        </button>        #mobile-actions-overlay.open { opacity: 1; visibility: visible; }
-
-                        <button class="btn btn-secondary" onclick="testSensor()">        #mobile-actions-sheet { position: fixed; bottom: 0; left: 0; right: 0; background: var(--card-bg); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-top: 1px solid var(--border-color); border-radius: 20px 20px 0 0; padding: 20px; z-index: 1100; transform: translateY(100%); transition: transform 0.3s ease-out; }
-
-                            <span class="btn-icon">🧪</span>        #mobile-actions-sheet.open { transform: translateY(0); }
-
-                            <span data-translate="test_sensor">Probar Sensor</span>        #mobile-actions-sheet h3 { text-align: center; color: var(--primary-color); margin-bottom: 20px; }
-
-                        </button>
-
-                    </div>        footer { text-align: right; padding: 20px; font-size: 0.8em; color: var(--text-secondary); }
-
-                </div>
-
-            </section>        @media (max-width: 900px) {
-
-            .page-wrapper { flex-direction: column; padding: 10px; padding-bottom: 80px; }
-
-            <!-- ======================================= -->            #side-nav { 
-
-            <!-- SECCIÓN: CONFIGURACIÓN AP            -->                position: fixed; 
-
-            <!-- ======================================= -->                bottom: 10px; 
-
-            <section id="ap-config" class="content-section">                width: fit-content;
-
-                <div class="section-header">                left: 50%;
-
-                    <h1 class="section-title" data-translate="ap_config">Configuración Punto de Acceso</h1>                transform: translateX(-50%);
-
-                    <p class="section-subtitle" data-translate="ap_config_desc">Configuración del modo punto de acceso para conexión directa</p>                height: 60px; 
-
-                </div>                min-height: auto; 
-
-                flex-direction: row; 
-
-                <div class="card">                justify-content: center; 
-
-                    <form id="ap-form" onsubmit="submitAPConfig(event)">                align-items: center; 
-
-                        <div class="form-group">                z-index: 1000; 
-
-                            <label class="form-label" data-translate="ap_ssid">Nombre del Punto de Acceso</label>                padding: 0 10px;
-
-                            <input type="text" id="ap-ssid" class="form-input" maxlength="32" required>            }
-
-                        </div>            #side-nav .nav-brand, .actions-menu { display: none; }
-
-                                    #side-nav ul { display: flex; flex-direction: row; gap: 5px; border-bottom: none; margin: 0; padding: 0; }
-
-                        <div class="form-group">            #side-nav ul li a { flex-direction: column; gap: 4px; padding: 8px; font-size: 0.7em; white-space: nowrap; }
-
-                            <label class="form-label" data-translate="ap_password">Contraseña del AP</label>            #side-nav ul li a .nav-icon { margin: 0; }
-
-                            <div class="password-field">            .card { scroll-margin-top: 20px; }
-
-                                <input type="password" id="ap-password" class="form-input" minlength="8" maxlength="63">            .top-controls {
-
-                                <button type="button" class="password-toggle" onclick="togglePassword('ap-password')">                position: fixed;
-
-                                    <svg><use href="#eye-closed-icon"></use></svg>                top: 100px;
-
-                                </button>                right: 20px;
-
-                            </div>                z-index: 1001;
-
-                            <small class="form-help" data-translate="ap_password_help">Déjalo vacío para red abierta. Mínimo 8 caracteres si se usa.</small>                flex-direction: column;
-
-                        </div>                gap: 15px;
-
-                                    }
-
-                        <button type="submit" class="btn">            #theme-toggle, .language-dropdown {
-
-                            <span class="btn-icon">💾</span>                background: var(--card-bg);
-
-                            <span data-translate="save_ap_config">Guardar Configuración AP</span>                border: 1px solid var(--border-color);
-
-                        </button>                border-radius: 50%;
-
-                    </form>                width: 48px;
-
-                </div>                height: 48px;
-
-            </section>                display: flex;
-
-                align-items: center;
-
-            <!-- ======================================= -->                justify-content: center;
-
-            <!-- SECCIÓN: CONFIGURACIÓN SISTEMA       -->                box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-
-            <!-- ======================================= -->                cursor: pointer;
-
-            <section id="system-config" class="content-section">            }
-
-                <div class="section-header">            .language-dropdown .language-menu {
-
-                    <h1 class="section-title" data-translate="system_config">Configuración del Sistema</h1>                bottom: 120%;
-
-                    <p class="section-subtitle" data-translate="system_config_desc">Configuración general del dispositivo</p>                top: auto;
-
-                </div>                right: 0;
-
-            }
-
-                <!-- Información del dispositivo -->        }
-
-                <div class="card">
-
-                    <h3 data-translate="device_info">Información del Dispositivo</h3>        /* Estilos para WiFi y señal */
-
-                    <div class="info-grid">        .wifi-list, .wifi-saved-list { 
-
-                        <div class="info-row">            max-height: 250px; 
-
-                            <span class="info-label" data-translate="device_name">Nombre del Dispositivo:</span>            overflow-y: auto; 
-
-                            <span class="info-value" id="device-name">ESP32 Sensor Nivel</span>            border: 1px solid var(--border-color); 
-
-                        </div>            border-radius: 8px; 
-
-                        <div class="info-row">            background: rgba(0,0,0,0.1); 
-
-                            <span class="info-label" data-translate="firmware_version">Versión del Firmware:</span>        }
-
-                            <span class="info-value" id="firmware-version">v2.1.0</span>        body.light-theme .wifi-list, body.light-theme .wifi-saved-list { 
-
-                        </div>            background: rgba(255,255,255,0.2); 
-
-                        <div class="info-row">        }
-
-                            <span class="info-label" data-translate="mac_address">Dirección MAC:</span>        
-
-                            <span class="info-value" id="mac-address">--:--:--:--:--:--</span>        .wifi-item, .wifi-saved-item { 
-
-                        </div>            padding: 12px; 
-
-                        <div class="info-row">            border-bottom: 1px solid var(--border-color); 
-
-                            <span class="info-label" data-translate="ip_address">Dirección IP:</span>            display: flex; 
-
-                            <span class="info-value" id="ip-address">192.168.1.100</span>            align-items: center; 
-
-                        </div>            gap: 12px; 
-
-                    </div>            transition: all 0.3s ease; 
-
-                </div>            border-radius: 6px;
-
-            margin: 2px;
-
-                <!-- Configuración de identidad personalizada -->        }
-
-                <div class="card">        .wifi-item:last-child, .wifi-saved-item:last-child { 
-
-                    <h3 data-translate="custom_identity">Identidad Personalizada</h3>            border-bottom: none; 
-
-                    <form id="identity-form" onsubmit="submitIdentityConfig(event)">        }
-
-                        <div class="form-group">        .wifi-item:hover { 
-
-                            <label class="form-label" data-translate="device_name">Nombre del Dispositivo</label>            background: rgba(3, 169, 244, 0.15); 
-
-                            <input type="text" id="custom-device-name" class="form-input" maxlength="32">            cursor: pointer; 
-
-                        </div>            transform: translateX(3px);
-
-                                    border-color: var(--primary-color);
-
-                        <div class="form-group">        }
-
-                            <label class="form-label" data-translate="location">Ubicación</label>        
-
-                            <input type="text" id="device-location" class="form-input" placeholder="Ej: Tanque Principal - Azotea">        .wifi-signal {
-
-                        </div>            flex-shrink: 0;
-
-                                    width: 24px;
-
-                        <button type="submit" class="btn">            height: 24px;
-
-                            <span class="btn-icon">💾</span>            display: flex;
-
-                            <span data-translate="save_identity">Guardar Identidad</span>            align-items: center;
-
-                        </button>            justify-content: center;
-
-                    </form>        }
-
-                </div>        
-
-            </section>        .wifi-signal-icon {
-
-            width: 20px;
-
-            <!-- ======================================= -->            height: 20px;
-
-            <!-- SECCIÓN: ACCIONES                    -->            fill: currentColor;
-
-            <!-- ======================================= -->            transition: all 0.3s ease;
-
-            <section id="actions" class="content-section">        }
-
-                <div class="section-header">        
-
-                    <h1 class="section-title" data-translate="actions">Acciones del Sistema</h1>        .wifi-details {
-
-                    <p class="section-subtitle" data-translate="actions_desc">Operaciones de mantenimiento y control</p>            flex: 1;
-
-                </div>            min-width: 0;
-
+            --bg-color-dark: #121212;
+            --card-bg-dark: rgba(28, 28, 30, 0.75);
+            --text-color-dark: #e0e0e0;
+            --text-secondary-dark: #a0a0b0;
+            --border-color-dark: rgba(255, 255, 255, 0.1);
+
+            --bg-color-light: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+            --card-bg-light: rgba(255, 255, 255, 0.7);
+            --text-color-light: #1a1a2e;
+                });
         }
 
-                <!-- Acciones de red -->        
+        function loadSavedNetworks() {
+            fetch('/api/wifi/saved')
+                .then(response => response.json())
+                .then(data => {
+                    const savedList = document.getElementById('saved-wifi-list');
+                    if (!data.networks || data.networks.length === 0) {
+                        savedList.innerHTML = '<div class="wifi-saved-item">📡 <span data-translate="no_saved_networks">No hay redes guardadas</span></div>';
+                        return;
+                    }
+                    
+                    savedList.innerHTML = data.networks.map(network => `
+                        <div class="wifi-saved-item ${network.is_default ? 'wifi-saved-default' : ''}">
+                            <div class="wifi-details">
+                                <div class="wifi-name">${network.ssid}</div>
+                                <div class="wifi-saved-status">
+                                    ${network.is_default ? '<span data-translate="default_network">Predeterminada</span>' : '<span data-translate="saved_network">Guardada</span>'}
+                                </div>
+                            </div>
+                            <div class="wifi-saved-actions">
+                                ${!network.is_default ? `<button class="button button-secondary" onclick="setDefaultNetwork('${network.ssid}')">⭐</button>` : ''}
+                                <button class="button button-danger" onclick="removeNetwork('${network.ssid}')">🗑️</button>
+                            </div>
+                        </div>
+                    `).join('');
+                })
+                .catch(error => {
+                    console.error('Error loading saved networks:', error);
+                    document.getElementById('saved-wifi-list').innerHTML = '<div class="wifi-saved-item">❌ Error al cargar redes guardadas</div>';
+                });
+        }
 
-                <div class="card">        .wifi-name { 
+        function setDefaultNetwork(ssid) {
+            fetch('/api/wifi/default', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ssid: ssid })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showToast(`"${ssid}" establecida como predeterminada`, 'success');
+                    loadSavedNetworks();
+                } else {
+                    showToast(data.message || 'Error al establecer red predeterminada', 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Error setting default network:', error);
+                showToast('Error al establecer red predeterminada', 'error');
+            });
+        }
 
-                    <h3 data-translate="network_actions">Acciones de Red</h3>            font-weight: 600; 
+        function removeNetwork(ssid) {
+            if (!confirm(`¿Eliminar la red "${ssid}"?`)) return;
+            
+            fetch('/api/wifi/remove', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ssid: ssid })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showToast(`Red "${ssid}" eliminada`, 'success');
+                    loadSavedNetworks();
+                } else {
+                    showToast(data.message || 'Error al eliminar la red', 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Error removing network:', error);
+                showToast('Error al eliminar la red', 'error');
+            });
+        }
 
-                    <div class="btn-group">            font-size: 1em;
+        function addWiFiNetwork() {    --text-secondary-light: #5a5a6e;
+            --border-color-light: silver;
+        }
+        
+        body {
+            --bg-color: var(--bg-color-dark);
+            --card-bg: var(--card-bg-dark);
+            --text-color: var(--text-color-dark);
+            --text-secondary: var(--text-secondary-dark);
+            --border-color: var(--border-color-dark);
+            
+            font-family: 'Segoe UI', 'Roboto', sans-serif;
+            background: var(--bg-color);
+            color: var(--text-color);
+            line-height: 1.6;
+            overflow-x: hidden;
+            transition: background 0.5s ease, color 0.5s ease;
+        }
 
-                        <button class="btn btn-secondary" onclick="testConnection()">            color: var(--text-color);
+        body.light-theme {
+            --bg-color: var(--bg-color-light);
+            --card-bg: var(--card-bg-light);
+            --text-color: var(--text-color-light);
+            --text-secondary: var(--text-secondary-light);
+            --border-color: var(--border-color-light);
+        }
 
-                            <span class="btn-icon">🌐</span>            overflow: hidden;
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+        
+        .page-wrapper { display: flex; padding: 20px; gap: 20px; align-items: flex-start;}
+        
+        #side-nav {
+            position: sticky;
+            top: 20px;
+            min-height: calc(100vh - 40px);
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 15px;
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            padding: 20px 10px;
+            transition: all 0.5s ease;
+            width: 240px;
+            display: flex;
+            flex-direction: column;
+        }
+        #side-nav:hover { border-color: var(--gold-color); }
+        #side-nav .nav-brand { text-align: center; margin-bottom: 20px; padding: 0 10px; }
+        #side-nav .nav-brand h1 { font-size: 1.5em; color: var(--primary-color); margin-bottom: 5px; }
+        #side-nav .nav-brand p { font-size: 0.8em; color: var(--text-secondary); }
+        #side-nav ul { list-style: none; padding-bottom: 15px; margin-bottom: 15px; border-bottom: 1px solid var(--border-color);}
+        #side-nav ul li a { display: flex; align-items: center; gap: 15px; padding: 12px 15px; margin: 5px 0; border-radius: 10px; color: var(--text-secondary); text-decoration: none; font-weight: 500; transition: all 0.3s ease; border: 1px solid transparent; }
+        #side-nav ul li a .nav-icon { font-size: 1.2em; width: 20px; text-align: center; }
+        #side-nav ul li a:hover, #side-nav ul li a:active { background: var(--primary-color); color: white; transform: translateX(5px); border-color: var(--gold-color); }
+        #side-nav ul li a.active { background: var(--primary-color); color: white; }
+        
+        main { flex: 1; display: flex; flex-direction: column; gap: 20px; position: relative; padding-top: 80px; }
+        
+        .top-controls { position: absolute; top: 0; right: 0; display: flex; gap: 15px; z-index: 100; padding: 10px; }
+        #theme-toggle { font-size: 20px; cursor: pointer; transition: transform 0.2s; }
+        #theme-toggle:hover { transform: scale(1.1); }
+        
+        .card { background: var(--card-bg); border: 1px solid var(--gold-color); border-radius: 15px; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); padding: 25px; scroll-margin-top: 90px; transition: all 0.5s ease; }
+        .card:hover { border-color: var(--primary-color); }
+        .card h2 { color: var(--primary-color); margin-bottom: 20px; display: flex; align-items: center; gap: 10px; font-size: 1.4em; }
+        
+        .form-group { margin-bottom: 18px; }
+        .form-group label { display: block; margin-bottom: 8px; font-weight: 500; color: var(--text-secondary); }
+        .form-group label:has(input[type="checkbox"]) { display: flex; align-items: center; gap: 10px; font-weight: normal; color: var(--text-color); cursor: pointer; }
+        .form-group label:has(input[type="checkbox"]) input { width: auto; }
+        .form-group input, .form-group select { width: 100%; padding: 12px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.1); border-radius: 8px; font-size: 1em; color: var(--text-color); transition: all 0.3s ease; }
+        body.light-theme .form-group input, body.light-theme .form-group select { background: rgba(255,255,255,0.2); }
+        .form-group input:focus, .form-group select:focus { outline: none; border-color: var(--primary-color); background: rgba(0,0,0,0.2); }
+        .form-help { display: block; margin-top: 8px; color: var(--text-secondary); font-size: 0.8em; font-style: italic; line-height: 1.3; }
+        
+        .button { background: var(--primary-color); color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-size: 1em; font-weight: 600; transition: all 0.3s ease; display: inline-flex; align-items: center; gap: 8px; }
+        .button:hover { transform: translateY(-2px); box-shadow: 0 4px 15px rgba(3, 169, 244, 0.3); }
+        .button-secondary { background: #6c757d; }
+        .button-danger { background: var(--error-color); }
+        
+        .language-dropdown { position: relative; display: inline-block; }
+        .language-current { font-size: 20px; cursor: pointer; transition: transform 0.2s; display: flex; align-items: center; justify-content: center; }
+        .language-current:hover { transform: scale(1.1); }
+        .language-menu { position: absolute; top: 120%; right: 0; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 10px; padding: 5px; display: flex; flex-direction: column; gap: 5px; opacity: 0; visibility: hidden; transform: translateY(-10px); transition: all 0.3s ease; }
+        .language-dropdown.open .language-menu { opacity: 1; visibility: visible; transform: translateY(0); }
+        .language-option { font-size: 20px; cursor: pointer; padding: 5px; border-radius: 5px; transition: background 0.2s; display: flex; align-items: center; justify-content: center; }
+        .language-option:hover { background: var(--primary-color); }
+        .language-option .flag-icon, .language-current .flag-icon { width: 1.8em; height: 1.8em; border-radius: 50%; object-fit: cover; box-shadow: 0 0 5px rgba(0,0,0,0.2); }
+        
+        .icon { width: 1.2em; height: 1.2em; vertical-align: middle; }
 
-                            <span data-translate="test_connection">Probar Conexión</span>            text-overflow: ellipsis;
+        .password-container { position: relative; display: flex; align-items: center; }
+        .password-toggle { position: absolute; right: 1px; top: 1px; bottom: 1px; background: transparent; border: none; border-radius: 0 7px 7px 0; cursor: pointer; padding: 0 12px; color: var(--text-secondary); font-size: 1.2em; display: flex; align-items: center; }
+        .password-toggle .icon { width: 1.4em; height: 1.4em; }
 
-                        </button>            white-space: nowrap;
+        .actions-menu { margin-top: auto; padding-top: 15px; }
+        .actions-menu-title { text-align: center; font-weight: 600; color: var(--text-secondary); margin-bottom: 10px; text-transform: uppercase; font-size: 0.8em; letter-spacing: 1px; }
+        .action-button { display: flex; align-items: center; width: 100%; background: rgba(0,0,0,0.1); border: 1px solid var(--border-color); border-radius: 10px; padding: 10px; margin-bottom: 8px; text-align: left; color: var(--text-color); cursor: pointer; transition: all 0.3s ease; }
+        body.light-theme .action-button { background: rgba(255,255,255,0.2); }
+        .action-button:hover { transform: translateY(-2px); border-color: var(--gold-color); box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
+        .action-button:active { transform: translateY(0); box-shadow: none; transition: all 0.1s ease; }
+        .action-button .action-icon { font-size: 1.5em; margin-right: 12px; }
+        .action-button .action-text .action-title { font-weight: 600; font-size: 0.9em; display: block; }
+        .action-button .action-text .action-description { font-size: 0.75em; color: var(--text-secondary); display: block; }
+        .action-button.danger:hover { border-color: var(--error-color); }
+        .action-button.secondary:hover { border-color: #888; }
 
-                        <button class="btn btn-warning" onclick="resetWiFi()">            margin-bottom: 2px;
+        .action-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 15px; }
+        .action-cell { background: rgba(0,0,0,0.1); border: 1px solid var(--border-color); border-radius: 10px; padding: 15px; text-align: center; transition: all 0.3s ease; }
+        body.light-theme .action-cell { background: rgba(255,255,255,0.2); }
+        .action-cell:hover { transform: translateY(-5px); box-shadow: 0 8px 20px rgba(0,0,0,0.2); }
+        .action-cell .action-icon { font-size: 2em; margin-bottom: 10px; color: var(--primary-color); }
+        .action-cell .action-title { font-weight: 600; font-size: 1.1em; margin-bottom: 5px; color: var(--text-color); }
+        .action-cell .action-description { font-size: 0.8em; color: var(--text-secondary); margin-bottom: 15px; min-height: 30px; }
+        .action-cell .button { width: 100%; justify-content: center; }
 
-                            <span class="btn-icon">🔄</span>        }
+        #mobile-actions-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1099; opacity: 0; visibility: hidden; transition: opacity 0.3s ease; }
+        #mobile-actions-overlay.open { opacity: 1; visibility: visible; }
+        #mobile-actions-sheet { position: fixed; bottom: 0; left: 0; right: 0; background: var(--card-bg); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-top: 1px solid var(--border-color); border-radius: 20px 20px 0 0; padding: 20px; z-index: 1100; transform: translateY(100%); transition: transform 0.3s ease-out; }
+        #mobile-actions-sheet.open { transform: translateY(0); }
+        #mobile-actions-sheet h3 { text-align: center; color: var(--primary-color); margin-bottom: 20px; }
 
-                            <span data-translate="reset_wifi">Reiniciar WiFi</span>        
+        footer { text-align: right; padding: 20px; font-size: 0.8em; color: var(--text-secondary); }
 
-                        </button>        .wifi-info {
+        @media (max-width: 900px) {
+            .page-wrapper { flex-direction: column; padding: 10px; padding-bottom: 80px; }
+            #side-nav { 
+                position: fixed; 
+                bottom: 10px; 
+                width: fit-content;
+                left: 50%;
+                transform: translateX(-50%);
+                height: 60px; 
+                min-height: auto; 
+                flex-direction: row; 
+                justify-content: center; 
+                align-items: center; 
+                z-index: 1000; 
+                padding: 0 10px;
+            }
+            #side-nav .nav-brand, .actions-menu { display: none; }
+            #side-nav ul { display: flex; flex-direction: row; gap: 5px; border-bottom: none; margin: 0; padding: 0; }
+            #side-nav ul li a { flex-direction: column; gap: 4px; padding: 8px; font-size: 0.7em; white-space: nowrap; }
+            #side-nav ul li a .nav-icon { margin: 0; }
+            .card { scroll-margin-top: 20px; }
+            .top-controls {
+                position: fixed;
+                top: 100px;
+                right: 20px;
+                z-index: 1001;
+                flex-direction: column;
+                gap: 15px;
+            }
+            #theme-toggle, .language-dropdown {
+                background: var(--card-bg);
+                border: 1px solid var(--border-color);
+                border-radius: 50%;
+                width: 48px;
+                height: 48px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+                cursor: pointer;
+            }
+            .language-dropdown .language-menu {
+                bottom: 120%;
+                top: auto;
+                right: 0;
+            }
+        }
 
-                    </div>            display: flex;
-
-                </div>            align-items: center;
-
+        /* Estilos para WiFi y señal */
+        .wifi-list, .wifi-saved-list { 
+            max-height: 250px; 
+            overflow-y: auto; 
+            border: 1px solid var(--border-color); 
+            border-radius: 8px; 
+            background: rgba(0,0,0,0.1); 
+        }
+        body.light-theme .wifi-list, body.light-theme .wifi-saved-list { 
+            background: rgba(255,255,255,0.2); 
+        }
+        
+        .wifi-item, .wifi-saved-item { 
+            padding: 12px; 
+            border-bottom: 1px solid var(--border-color); 
+            display: flex; 
+            align-items: center; 
+            gap: 12px; 
+            transition: all 0.3s ease; 
+            border-radius: 6px;
+            margin: 2px;
+        }
+        .wifi-item:last-child, .wifi-saved-item:last-child { 
+            border-bottom: none; 
+        }
+        .wifi-item:hover { 
+            background: rgba(3, 169, 244, 0.15); 
+            cursor: pointer; 
+            transform: translateX(3px);
+            border-color: var(--primary-color);
+        }
+        
+        .wifi-signal {
+            flex-shrink: 0;
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .wifi-signal-icon {
+            width: 20px;
+            height: 20px;
+            fill: currentColor;
+            transition: all 0.3s ease;
+        }
+        
+        .wifi-details {
+            flex: 1;
+            min-width: 0;
+        }
+        
+        .wifi-name { 
+            font-weight: 600; 
+            font-size: 1em;
+            color: var(--text-color);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            margin-bottom: 2px;
+        }
+        
+        .wifi-info {
+            display: flex;
+            align-items: center;
             gap: 8px;
-
-                <!-- Acciones del sistema -->            font-size: 0.8em;
-
-                <div class="card">        }
-
-                    <h3 data-translate="system_actions">Acciones del Sistema</h3>        
-
-                    <div class="btn-group">        .wifi-rssi { 
-
-                        <button class="btn btn-warning" onclick="restartDevice()">            color: var(--text-secondary); 
-
-                            <span class="btn-icon">🔄</span>            font-family: 'Courier New', monospace;
-
-                            <span data-translate="restart_device">Reiniciar Dispositivo</span>        }
-
-                        </button>        
-
-                        <button class="btn btn-danger" onclick="factoryReset()">        .wifi-security {
-
-                            <span class="btn-icon">⚠️</span>            font-size: 1em;
-
-                            <span data-translate="factory_reset">Restaurar Fábrica</span>            opacity: 0.7;
-
-                        </button>        }
-
-                    </div>        
-
-                </div>        .wifi-saved-status { 
-
+            font-size: 0.8em;
+        }
+        
+        .wifi-rssi { 
+            color: var(--text-secondary); 
+            font-family: 'Courier New', monospace;
+        }
+        
+        .wifi-security {
+            font-size: 1em;
+            opacity: 0.7;
+        }
+        
+        .wifi-saved-status { 
             font-size: 0.8em; 
+            color: var(--text-secondary); 
+        }
 
-                <!-- ESP-NOW Configuration -->            color: var(--text-secondary); 
-
-                <div class="card">        }
-
-                    <h3 data-translate="espnow_config">Configuración ESP-NOW</h3>
-
-                    <p data-translate="espnow_desc">Configuración para comunicación mesh entre dispositivos ESP32</p>        /* Estilos para toasts */
-
-                    <form id="espnow-form" onsubmit="submitESPNowConfig(event)">        .toast-container { 
-
-                        <div class="form-group">            position: fixed; 
-
-                            <label class="form-label" data-translate="espnow_role">Rol del Dispositivo</label>            bottom: 20px; 
-
-                            <select id="espnow-role" class="form-input">            right: 20px; 
-
-                                <option value="master" data-translate="master_device">Dispositivo Maestro</option>            z-index: 9999; 
-
-                                <option value="slave" data-translate="slave_device">Dispositivo Esclavo</option>        }
-
-                            </select>        .toast { 
-
-                        </div>            background: var(--card-bg); 
-
-                                    border: 1px solid var(--border-color); 
-
-                        <div class="form-group">            border-left: 4px solid var(--primary-color); 
-
-                            <label class="form-label" data-translate="sensor_id">ID del Sensor</label>            border-radius: 10px; 
-
-                            <input type="number" id="sensor-id" class="form-input" min="1" max="255" value="1">            padding: 15px 20px; 
-
-                        </div>            margin-top: 10px; 
-
-                                    box-shadow: 0 5px 20px rgba(0,0,0,0.3); 
-
-                        <div class="form-group">            opacity: 0; 
-
-                            <label class="form-label" data-translate="espnow_channel">Canal ESP-NOW</label>            transform: translateX(100%); 
-
-                            <select id="espnow-channel" class="form-input">            transition: all 0.4s cubic-bezier(0.25, 0.8, 0.25, 1); 
-
-                                <option value="1">Canal 1</option>        }
-
-                                <option value="6" selected>Canal 6</option>        .toast.show { 
-
-                                <option value="11">Canal 11</option>            opacity: 1; 
-
-                            </select>            transform: translateX(0); 
-
-                        </div>        }
-
-                                .toast.success { 
-
-                        <button type="submit" class="btn">            border-left-color: var(--success-color); 
-
-                            <span class="btn-icon">💾</span>        }
-
-                            <span data-translate="save_espnow">Guardar ESP-NOW</span>        .toast.error { 
-
-                        </button>            border-left-color: var(--error-color); 
-
-                    </form>        }
-
-                            .toast.warning { 
-
-                    <div class="btn-group" style="margin-top: 15px;">            border-left-color: var(--warning-color); 
-
-                        <button class="btn btn-secondary" onclick="testESPNow()">        }
-
-                            <span class="btn-icon">📡</span>        .toast-message { 
-
-                            <span data-translate="test_espnow">Probar ESP-NOW</span>            font-size: 0.9em; 
-
-                        </button>            color: var(--text-color); 
-
-                        <button class="btn btn-secondary" onclick="openESPNowManager()" id="espnow-manager-btn">        }
-
-                            <span class="btn-icon">🌐</span>    </style>
-
-                            <span data-translate="espnow_manager">Gestor ESP-NOW</span></head>
-
-                        </button><body>
-
-                    </div>    <svg xmlns="http://www.w3.org/2000/svg" style="display: none;">
-
-                </div>        <symbol id="wifi-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-
-            </section>            <path d="M5 12.55a11 11 0 0 1 14 0"></path>
-
-        </main>            <path d="M1.42 9a16 16 0 0 1 21.16 0"></path>
-
-    </div>            <path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path>
-
+        /* Estilos para toasts */
+        .toast-container { 
+            position: fixed; 
+            bottom: 20px; 
+            right: 20px; 
+            z-index: 9999; 
+        }
+        .toast { 
+            background: var(--card-bg); 
+            border: 1px solid var(--border-color); 
+            border-left: 4px solid var(--primary-color); 
+            border-radius: 10px; 
+            padding: 15px 20px; 
+            margin-top: 10px; 
+            box-shadow: 0 5px 20px rgba(0,0,0,0.3); 
+            opacity: 0; 
+            transform: translateX(100%); 
+            transition: all 0.4s cubic-bezier(0.25, 0.8, 0.25, 1); 
+        }
+        .toast.show { 
+            opacity: 1; 
+            transform: translateX(0); 
+        }
+        .toast.success { 
+            border-left-color: var(--success-color); 
+        }
+        .toast.error { 
+            border-left-color: var(--error-color); 
+        }
+        .toast.warning { 
+            border-left-color: var(--warning-color); 
+        }
+        .toast-message { 
+            font-size: 0.9em; 
+            color: var(--text-color); 
+        }
+    </style>
+</head>
+<body>
+    <svg xmlns="http://www.w3.org/2000/svg" style="display: none;">
+        <symbol id="wifi-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 12.55a11 11 0 0 1 14 0"></path>
+            <path d="M1.42 9a16 16 0 0 1 21.16 0"></path>
+            <path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path>
             <line x1="12" y1="20" x2="12.01" y2="20"></line>
-
-    <!-- =============================================== -->        </symbol>
-
-    <!-- ELEMENTOS DE INTERFAZ ADICIONALES            -->        <symbol id="eye-open-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-
-    <!-- =============================================== -->            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-
-                <circle cx="12" cy="12" r="3"></circle>
-
-    <!-- Overlay para móviles -->        </symbol>
-
-    <div id="mobile-actions-overlay"></div>        <symbol id="eye-closed-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-
-    <div id="mobile-actions-sheet">            <path d="M2 12C5 18, 19 18, 22 12"></path>
-
-        <!-- El contenido de .actions-menu se clonará aquí -->            <path d="M6 16l-2 4"></path>
-
-    </div>            <path d="M12 17l0 4"></path>
-
+        </symbol>
+        <symbol id="eye-open-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+            <circle cx="12" cy="12" r="3"></circle>
+        </symbol>
+        <symbol id="eye-closed-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M2 12C5 18, 19 18, 22 12"></path>
+            <path d="M6 16l-2 4"></path>
+            <path d="M12 17l0 4"></path>
             <path d="M18 16l2 4"></path>
-
-    <!-- Contenedor de notificaciones toast -->        </symbol>
-
-    <div class="toast-container" id="toast-container"></div>    </svg>
-
+        </symbol>
+    </svg>
     <div class="page-wrapper">
-
-    <!-- =============================================== -->        <nav id="side-nav">
-
-    <!-- SCRIPTS JAVASCRIPT                           -->            <div>
-
-    <!-- =============================================== -->                <div class="nav-brand">
-
-    <!-- Script principal del portal de configuración -->                    <h1 data-translate="header_title">🌊 Sensor de Nivel</h1>
-
-    <script src="js/captive-portal.js"></script>                    <p data-translate="header_subtitle">Portal de Configuración</p>
-
-</body>                </div>
-
-</html>                <ul>
+        <nav id="side-nav">
+            <div>
+                <div class="nav-brand">
+                    <h1 data-translate="header_title">🌊 Sensor de Nivel</h1>
+                    <p data-translate="header_subtitle">Portal de Configuración</p>
+                </div>
+                <ul>
                     <li><a href="#wifi-section" class="nav-link active"><svg class="icon nav-icon"><use xlink:href="#wifi-icon"></use></svg> <span data-translate="wifi_config">WiFi</span></a></li>
                     <li><a href="#sensor-section" class="nav-link"><span class="nav-icon">📏</span> <span data-translate="sensor_config">Sensor</span></a></li>
                     <li><a href="#ap-section" class="nav-link"><span class="nav-icon">📡</span> <span data-translate="ap_config">Punto de Acceso</span></a></li>
@@ -1044,6 +617,777 @@
 
     <div class="toast-container" id="toast-container"></div>
 
-    <script src="js/captive-portal.js"></script>
+    <script>
+        const translations = {
+            es: {
+                page_title: "Portal de Configuración",
+                header_title: "Sensor de Nivel",
+                header_subtitle: "Portal de Configuración",
+                wifi_config: "WiFi",
+                sensor_config: "Sensor",
+                ap_config: "Punto de Acceso",
+                system_config: "Sistema",
+                actions: "Acciones",
+                saved_networks: "Redes Guardadas",
+                no_saved_networks: "No hay redes guardadas",
+                add_new_network: "Agregar Nueva Red",
+                scan_networks: "Escanear Redes",
+                network_name: "Nombre de Red (SSID)",
+                password: "Contraseña",
+                wifi_password_help: "Mínimo 8 caracteres para mayor seguridad.",
+                make_default: "Establecer como predeterminada",
+                add_network: "Agregar Red",
+                tank_height: "Altura del Tanque (cm)",
+                tank_height_help: "Distancia total desde el fondo del tanque hasta la parte superior.",
+                tank_capacity: "Capacidad del Tanque (litros)",
+                tank_capacity_help: "Volumen máximo de agua cuando el tanque está lleno.",
+                min_distance: "Distancia Mínima del Sensor (cm)",
+                min_distance_help: "Distancia mínima que el sensor puede medir con precisión.",
+                container_type: "Tipo de Contenedor",
+                container_type_help: "Contenedor sobre el cual se va a sensar su volumen.",
+                tank: "Tinaco",
+                cistern: "Cisterna",
+                generic: "Contenedor Genérico",
+                save_sensor: "Guardar",
+                ap_name: "Nombre del AP",
+                ap_name_help: "Nombre que aparecerá en la lista de redes WiFi.",
+                ap_password: "Contraseña del AP",
+                ap_password_help: "De 8 a 10 caracteres. Simple y fácil de recordar.",
+                device_name: "Nombre del Dispositivo (Hostname)",
+                device_name_help: "Nombre para identificar el dispositivo en la red local (sin espacios).",
+                save_ap: "Guardar",
+                auto_sleep_time: "Apagado Automático de Pantalla",
+                auto_sleep_help: "Tiempo para que la pantalla se apague y ahorrar energía.",
+                update_interval: "Intervalo de Lectura del Sensor (segundos)",
+                update_interval_help: "Frecuencia con la que el sensor mide el nivel del agua.",
+                save_system: "Guardar",
+                save_all_title: "Guardar Todo",
+                save_all_desc: "Guarda todos los cambios de todas las secciones sin reiniciar.",
+                save_all_desc_short: "Guarda todos los ajustes.",
+                save_and_restart_title: "Aplicar y Conectar",
+                save_and_restart_desc: "Guarda la configuración y reinicia el dispositivo para conectar al WiFi.",
+                save_and_restart_desc_short: "Guarda y reinicia con WiFi.",
+                restart_title: "Reiniciar",
+                restart_desc: "Reinicia el dispositivo. Los cambios no guardados se perderán.",
+                restart_desc_short: "Reinicia el dispositivo.",
+                factory_reset_title: "Reset de Fábrica",
+                factory_reset_desc: "Borra toda la configuración y restaura los valores de fábrica.",
+                factory_reset_desc_short: "Borra la configuración.",
+                default_network: "Predeterminada",
+                saved_network: "Guardada",
+                set_as_default: "Hacer Predeterminada",
+                remove_network: "Eliminar"
+            },
+            en: {
+                page_title: "Configuration Portal",
+                header_title: "Water Level Sensor",
+                header_subtitle: "Configuration Portal",
+                wifi_config: "WiFi",
+                sensor_config: "Sensor",
+                ap_config: "Access Point",
+                system_config: "System",
+                actions: "Actions",
+                saved_networks: "Saved Networks",
+                no_saved_networks: "No saved networks",
+                add_new_network: "Add New Network",
+                scan_networks: "Scan Networks",
+                network_name: "Network Name (SSID)",
+                password: "Password",
+                wifi_password_help: "Minimum 8 characters for better security.",
+                make_default: "Set as default",
+                add_network: "Add Network",
+                tank_height: "Tank Height (cm)",
+                tank_height_help: "Total distance from tank bottom to top.",
+                tank_capacity: "Tank Capacity (liters)",
+                tank_capacity_help: "Maximum water volume when tank is full.",
+                min_distance: "Minimum Sensor Distance (cm)",
+                min_distance_help: "Minimum distance the sensor can measure accurately.",
+                container_type: "Container Type",
+                container_type_help: "Container type to measure volume.",
+                tank: "Tank",
+                cistern: "Cistern",
+                generic: "Generic Container",
+                save_sensor: "Save",
+                ap_name: "AP Name",
+                ap_name_help: "Name that will appear in WiFi networks list.",
+                ap_password: "AP Password",
+                ap_password_help: "8 to 10 characters. Simple and easy to remember.",
+                device_name: "Device Name (Hostname)",
+                device_name_help: "Name to identify device on local network (no spaces).",
+                save_ap: "Save",
+                auto_sleep_time: "Automatic Screen Sleep",
+                auto_sleep_help: "Time for screen to turn off and save energy.",
+                update_interval: "Sensor Reading Interval (seconds)",
+                update_interval_help: "Frequency with which sensor measures water level.",
+                save_system: "Save",
+                save_all_title: "Save All",
+                save_all_desc: "Saves all changes from all sections without restarting.",
+                save_all_desc_short: "Saves all settings.",
+                save_and_restart_title: "Apply and Connect",
+                save_and_restart_desc: "Saves configuration and restarts device to connect to WiFi.",
+                save_and_restart_desc_short: "Save and restart with WiFi.",
+                restart_title: "Restart",
+                restart_desc: "Restarts device. Unsaved changes will be lost.",
+                restart_desc_short: "Restart device.",
+                factory_reset_title: "Factory Reset",
+                factory_reset_desc: "Erases all configuration and restores factory values.",
+                factory_reset_desc_short: "Erase configuration.",
+                default_network: "Default",
+                saved_network: "Saved",
+                set_as_default: "Set as Default",
+                remove_network: "Remove"
+            },
+            fr: {
+                page_title: "Portail de Configuration",
+                header_title: "Capteur de Niveau d'Eau",
+                header_subtitle: "Portail de Configuration",
+                wifi_config: "WiFi",
+                sensor_config: "Capteur",
+                ap_config: "Point d'Accès",
+                system_config: "Système",
+                actions: "Actions",
+                saved_networks: "Réseaux Sauvegardés",
+                no_saved_networks: "Aucun réseau sauvegardé",
+                add_new_network: "Ajouter Nouveau Réseau",
+                scan_networks: "Scanner Réseaux",
+                network_name: "Nom du Réseau (SSID)",
+                password: "Mot de Passe",
+                wifi_password_help: "Minimum 8 caractères pour plus de sécurité.",
+                make_default: "Définir par défaut",
+                add_network: "Ajouter Réseau",
+                tank_height: "Hauteur du Réservoir (cm)",
+                tank_height_help: "Distance totale du fond du réservoir au sommet.",
+                tank_capacity: "Capacité du Réservoir (litres)",
+                tank_capacity_help: "Volume maximum d'eau quand le réservoir est plein.",
+                min_distance: "Distance Minimale du Capteur (cm)",
+                min_distance_help: "Distance minimale que le capteur peut mesurer avec précision.",
+                container_type: "Type de Conteneur",
+                container_type_help: "Type de conteneur pour mesurer le volume.",
+                tank: "Réservoir",
+                cistern: "Citerne",
+                generic: "Conteneur Générique",
+                save_sensor: "Sauvegarder",
+                ap_name: "Nom du PA",
+                ap_name_help: "Nom qui apparaîtra dans la liste des réseaux WiFi.",
+                ap_password: "Mot de Passe PA",
+                ap_password_help: "8 à 10 caractères. Simple et facile à retenir.",
+                device_name: "Nom du Dispositif (Hostname)",
+                device_name_help: "Nom pour identifier l'appareil sur le réseau local (sans espaces).",
+                save_ap: "Sauvegarder",
+                auto_sleep_time: "Mise en Veille Automatique",
+                auto_sleep_help: "Temps pour que l'écran s'éteigne et économise l'énergie.",
+                update_interval: "Intervalle de Lecture du Capteur (secondes)",
+                update_interval_help: "Fréquence à laquelle le capteur mesure le nivel d'eau.",
+                save_system: "Sauvegarder",
+                save_all_title: "Sauvegarder Tout",
+                save_all_desc: "Sauvegarde tous les changements de toutes les sections sans redémarrer.",
+                save_all_desc_short: "Sauvegarde tous les paramètres.",
+                save_and_restart_title: "Appliquer et Connecter",
+                save_and_restart_desc: "Sauvegarde la configuration et redémarre l'appareil pour se connecter au WiFi.",
+                save_and_restart_desc_short: "Sauvegarder et redémarrer avec WiFi.",
+                restart_title: "Redémarrer",
+                restart_desc: "Redémarre l'appareil. Les changements non sauvegardés seront perdus.",
+                restart_desc_short: "Redémarrer l'appareil.",
+                factory_reset_title: "Remise à Zéro",
+                factory_reset_desc: "Efface toute la configuration et restaure les valeurs d'usine.",
+                factory_reset_desc_short: "Effacer la configuration.",
+                default_network: "Par Défaut",
+                saved_network: "Sauvegardé",
+                set_as_default: "Définir par Défaut",
+                remove_network: "Supprimer"
+            }
+        };
+
+        let currentLanguage = 'es';
+
+        // Función para cambiar idioma
+        function selectLanguage(lang, flag) {
+            currentLanguage = lang;
+            document.getElementById('current-flag').innerHTML = flag;
+            document.getElementById('language-dropdown').classList.remove('open');
+            applyTranslations(lang);
+            localStorage.setItem('selectedLanguage', lang);
+            localStorage.setItem('selectedFlag', flag);
+        }
+
+        // Función para aplicar traducciones
+        function applyTranslations(lang) {
+            const elements = document.querySelectorAll('[data-translate]');
+            elements.forEach(element => {
+                const key = element.getAttribute('data-translate');
+                if (translations[lang] && translations[lang][key]) {
+                    if (element.tagName === 'INPUT' && element.type === 'text') {
+                        element.placeholder = translations[lang][key];
+                    } else {
+                        element.textContent = translations[lang][key];
+                    }
+                }
+            });
+            document.title = translations[lang].page_title;
+        }
+
+        // Toggle del menú de idiomas
+        document.getElementById('language-dropdown').addEventListener('click', function(e) {
+            e.stopPropagation();
+            this.classList.toggle('open');
+        });
+
+        // Cerrar menú de idiomas al hacer clic fuera
+        document.addEventListener('click', function() {
+            document.getElementById('language-dropdown').classList.remove('open');
+        });
+
+        // Toggle del tema
+        document.getElementById('theme-toggle').addEventListener('click', function() {
+            document.body.classList.toggle('light-theme');
+            this.textContent = document.body.classList.contains('light-theme') ? '🌙' : '☀️';
+            localStorage.setItem('theme', document.body.classList.contains('light-theme') ? 'light' : 'dark');
+        });
+
+        // Función para mostrar toast
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.innerHTML = `<div class="toast-message">${message}</div>`;
+            container.appendChild(toast);
+            
+            setTimeout(() => toast.classList.add('show'), 100);
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => container.removeChild(toast), 400);
+            }, 3000);
+        }
+
+        // Función para toggle de contraseña
+        function togglePassword(inputId) {
+            const input = document.getElementById(inputId);
+            const button = input.nextElementSibling;
+            if (input.type === 'password') {
+                input.type = 'text';
+                button.innerHTML = '<svg class="icon"><use xlink:href="#eye-closed-icon"></use></svg>';
+            } else {
+                input.type = 'password';
+                button.innerHTML = '<svg class="icon"><use xlink:href="#eye-open-icon"></use></svg>';
+            }
+        }
+
+        // Navegación del menú lateral
+        document.querySelectorAll('.nav-link').forEach(link => {
+            if (link.id !== 'actions-nav-link') {
+                link.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+                    this.classList.add('active');
+                    const target = this.getAttribute('href');
+                    document.querySelector(target).scrollIntoView({ behavior: 'smooth' });
+                });
+            }
+        });
+
+        // Funciones de configuración WiFi
+        function scanWiFi() {
+            const button = document.getElementById('scan-button');
+            const wifiList = document.getElementById('wifi-list');
+            
+            // Cambiar botón a estado de escaneo
+            button.disabled = true;
+            button.innerHTML = '⏳ Escaneando...';
+            showToast('Iniciando escaneo de redes WiFi...', 'info');
+            
+            // Limpiar lista anterior
+            wifiList.innerHTML = '<div class="wifi-item">🔍 Iniciando escaneo...</div>';
+            
+            // Paso 1: Iniciar el escaneo
+            fetch('/scan-wifi')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data[0] && data[0].error) {
+                        throw new Error(data[0].message || 'Error en el escaneo');
+                    }
+                    
+                    if (data[0] && (data[0].scanning || data[0].message)) {
+                        showToast(data[0].message || 'Escaneo en progreso...', 'info');
+                        wifiList.innerHTML = '<div class="wifi-item">🔍 Escaneando redes...</div>';
+                        
+                        // Esperar y verificar resultados
+                        setTimeout(() => checkScanResults(), 2000);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error starting WiFi scan:', error);
+                    showToast(`Error al iniciar escaneo: ${error.message}`, 'error');
+                    wifiList.innerHTML = '<div class="wifi-item">❌ Error al iniciar escaneo</div>';
+                    restoreButton();
+                });
+        }
+        
+        function checkScanResults() {
+            const wifiList = document.getElementById('wifi-list');
+            
+            fetch('/wifi-results')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data[0] && data[0].error) {
+                        throw new Error(data[0].message || 'Error obteniendo resultados');
+                    }
+                    
+                    if (data[0] && data[0].scanning) {
+                        // Aún escaneando, esperar más
+                        showToast('Escaneo en progreso...', 'info');
+                        setTimeout(() => checkScanResults(), 1500);
+                        return;
+                    }
+                    
+                    // Resultados listos
+                    renderWiFiNetworks(data);
+                    showToast(`${data.length} redes encontradas`, 'success');
+                    restoreButton();
+                })
+                .catch(error => {
+                    console.error('Error getting WiFi results:', error);
+                    showToast(`Error obteniendo resultados: ${error.message}`, 'error');
+                    wifiList.innerHTML = '<div class="wifi-item">❌ Error obteniendo resultados</div>';
+                    restoreButton();
+                });
+        }
+        
+        function restoreButton() {
+            const button = document.getElementById('scan-button');
+            button.disabled = false;
+            button.innerHTML = '🔄 <span data-translate="scan_networks">Escanear Redes</span>';
+        }
+
+        function renderWiFiNetworks(networks) {
+            const wifiList = document.getElementById('wifi-list');
+            
+            if (!networks || networks.length === 0) {
+                wifiList.innerHTML = '<div class="wifi-item">📡 No se encontraron redes</div>';
+                return;
+            }
+
+            // Ordenar por señal (RSSI más alto = mejor señal)
+            networks.sort((a, b) => b.rssi - a.rssi);
+
+            wifiList.innerHTML = networks.map(network => `
+                <div class="wifi-item" onclick="selectWiFiNetwork('${network.ssid}', ${network.encryption})">
+                    <div class="wifi-signal">
+                        ${getWiFiSignalIcon(network.rssi)}
+                    </div>
+                    <div class="wifi-details">
+                        <div class="wifi-name">${network.ssid}</div>
+                        <div class="wifi-info">
+                            <span class="wifi-rssi">${network.rssi} dBm</span>
+                            <span class="wifi-security">${network.encryption ? '🔒' : '🔓'}</span>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function getWiFiSignalIcon(rssi) {
+            // Convertir RSSI a porcentaje de señal y asignar color
+            let signalBars, signalColor, signalPercentage;
+            
+            if (rssi >= -50) {
+                signalBars = 4; signalColor = '#4caf50'; signalPercentage = 100; // Excelente
+            } else if (rssi >= -60) {
+                signalBars = 3; signalColor = '#8bc34a'; signalPercentage = 75;  // Buena
+            } else if (rssi >= -70) {
+                signalBars = 2; signalColor = '#ff9800'; signalPercentage = 50;  // Regular
+            } else if (rssi >= -80) {
+                signalBars = 1; signalColor = '#f44336'; signalPercentage = 25;  // Débil
+            } else {
+                signalBars = 0; signalColor = '#9e9e9e'; signalPercentage = 5;   // Muy débil
+            }
+
+            return `
+                <svg class="wifi-signal-icon" viewBox="0 0 24 24" style="color: ${signalColor};" title="${signalPercentage}% - ${rssi} dBm">
+                    <path d="M1 9l2 2c4.97-4.97 13.03-4.97 18 0l2-2C16.93 2.93 7.08 2.93 1 9z" 
+                          fill="${signalBars >= 1 ? signalColor : '#333'}" opacity="${signalBars >= 1 ? 1 : 0.3}"/>
+                    <path d="M5 13l2 2c2.76-2.76 7.24-2.76 10 0l2-2C15.14 9.14 8.87 9.14 5 13z" 
+                          fill="${signalBars >= 2 ? signalColor : '#333'}" opacity="${signalBars >= 2 ? 1 : 0.3}"/>
+                    <path d="M9 17l2 2c.87-.87 2.13-.87 3 0l2-2C14.63 15.63 11.37 15.63 9 17z" 
+                          fill="${signalBars >= 3 ? signalColor : '#333'}" opacity="${signalBars >= 3 ? 1 : 0.3}"/>
+                    <circle cx="12" cy="21" r="1" 
+                           fill="${signalBars >= 4 ? signalColor : '#333'}" opacity="${signalBars >= 4 ? 1 : 0.3}"/>
+                </svg>
+            `;
+        }
+
+        function selectWiFiNetwork(ssid, requiresPassword) {
+            document.getElementById('wifi-ssid').value = ssid;
+            if (requiresPassword) {
+                document.getElementById('wifi-password').focus();
+                showToast(`Red "${ssid}" seleccionada. Ingresa la contraseña.`, 'info');
+            } else {
+                showToast(`Red abierta "${ssid}" seleccionada.`, 'success');
+            }
+        }
+
+        function addWiFiNetwork() {
+            const ssid = document.getElementById('wifi-ssid').value.trim();
+            const password = document.getElementById('wifi-password').value;
+            const makeDefault = document.getElementById('make-default').checked;
+            
+            if (!ssid) {
+                showToast('Por favor ingrese el nombre de la red', 'error');
+                return;
+            }
+            
+            if (ssid.length > 32) {
+                showToast('El nombre de la red no puede tener más de 32 caracteres', 'error');
+                return;
+            }
+            
+            if (password && password.length < 8) {
+                showToast('La contraseña debe tener al menos 8 caracteres', 'error');
+                return;
+            }
+
+            const networkData = {
+                ssid: ssid,
+                password: password,
+                make_default: makeDefault
+            };
+
+            fetch('/api/wifi/add', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(networkData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showToast(`Red "${ssid}" agregada correctamente`, 'success');
+                    document.getElementById('wifi-ssid').value = '';
+                    document.getElementById('wifi-password').value = '';
+                    loadSavedNetworks();
+                } else {
+                    showToast(data.message || 'Error al agregar la red', 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Error adding network:', error);
+                showToast('Error al agregar la red', 'error');
+            });
+        }
+
+        function loadSavedNetworks() {
+            fetch('/api/wifi/saved')
+                .then(response => response.json())
+                .then(data => {
+                    const savedList = document.getElementById('saved-wifi-list');
+                    if (!data.networks || data.networks.length === 0) {
+                        savedList.innerHTML = '<div class="wifi-saved-item">📡 <span data-translate="no_saved_networks">No hay redes guardadas</span></div>';
+                        return;
+                    }
+                    
+                    savedList.innerHTML = data.networks.map(network => `
+                        <div class="wifi-saved-item ${network.is_default ? 'wifi-saved-default' : ''}">
+                            <div class="wifi-details">
+                                <div class="wifi-name">${network.ssid}</div>
+                                <div class="wifi-saved-status">
+                                    ${network.is_default ? '<span data-translate="default_network">Predeterminada</span>' : '<span data-translate="saved_network">Guardada</span>'}
+                                </div>
+                            </div>
+                            <div class="wifi-saved-actions">
+                                ${!network.is_default ? `<button class="button button-secondary" onclick="setDefaultNetwork('${network.ssid}')">⭐</button>` : ''}
+                                <button class="button button-danger" onclick="removeNetwork('${network.ssid}')">🗑️</button>
+                            </div>
+                        </div>
+                    `).join('');
+                })
+                .catch(error => {
+                    console.error('Error loading saved networks:', error);
+                    document.getElementById('saved-wifi-list').innerHTML = '<div class="wifi-saved-item">❌ Error al cargar redes guardadas</div>';
+                });
+        }
+
+        function setDefaultNetwork(ssid) {
+            fetch('/api/wifi/default', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ssid: ssid })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showToast(`"${ssid}" establecida como predeterminada`, 'success');
+                    loadSavedNetworks();
+                } else {
+                    showToast(data.message || 'Error al establecer red predeterminada', 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Error setting default network:', error);
+                showToast('Error al establecer red predeterminada', 'error');
+            });
+        }
+
+        function removeNetwork(ssid) {
+            if (!confirm(`¿Eliminar la red "${ssid}"?`)) return;
+            
+            fetch('/api/wifi/remove', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ssid: ssid })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showToast(`Red "${ssid}" eliminada`, 'success');
+                    loadSavedNetworks();
+                } else {
+                    showToast(data.message || 'Error al eliminar la red', 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Error removing network:', error);
+                showToast('Error al eliminar la red', 'error');
+            });
+        }
+
+        function saveSensorConfig() {
+            const config = {
+                tank_height: document.getElementById('tank-height').value,
+                tank_capacity: document.getElementById('tank-capacity').value,
+                min_distance: document.getElementById('min-distance').value,
+                container_type: document.getElementById('container-type').value
+            };
+            
+            fetch('/api/sensor/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(config)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showToast('Configuración del sensor guardada', 'success');
+                } else {
+                    showToast(data.message || 'Error al guardar configuración del sensor', 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Error saving sensor config:', error);
+                showToast('Error al guardar configuración del sensor', 'error');
+            });
+        }
+
+        function saveAPConfig() {
+            const config = {
+                ap_ssid: document.getElementById('ap-ssid').value,
+                ap_password: document.getElementById('ap-password').value,
+                hostname: document.getElementById('hostname').value
+            };
+            
+            fetch('/api/ap/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(config)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showToast('Configuración del AP guardada', 'success');
+                } else {
+                    showToast(data.message || 'Error al guardar configuración del AP', 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Error saving AP config:', error);
+                showToast('Error al guardar configuración del AP', 'error');
+            });
+        }
+
+        function saveSystemConfig() {
+            const config = {
+                auto_sleep_time: document.getElementById('auto-sleep-time').value,
+                update_interval: document.getElementById('update-interval').value
+            };
+            
+            fetch('/api/system/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(config)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showToast('Configuración del sistema guardada', 'success');
+                } else {
+                    showToast(data.message || 'Error al guardar configuración del sistema', 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Error saving system config:', error);
+                showToast('Error al guardar configuración del sistema', 'error');
+            });
+        }
+
+        function saveAllConfig() {
+            showToast('Guardando toda la configuración...', 'info');
+            
+            fetch('/api/config/save-all', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showToast('Toda la configuración guardada', 'success');
+                } else {
+                    showToast(data.message || 'Error al guardar la configuración', 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Error saving all config:', error);
+                showToast('Error al guardar la configuración', 'error');
+            });
+        }
+
+        function saveAndRestartConfirm() {
+            if(confirm('¿Guardar configuración y reiniciar el dispositivo?')) {
+                showToast('Guardando y reiniciando...', 'info');
+                
+                fetch('/api/save-and-restart', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        showToast('Configuración guardada. Reiniciando dispositivo...', 'success');
+                    } else {
+                        showToast(data.message || 'Error al guardar y reiniciar', 'error');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error saving and restarting:', error);
+                    showToast('Error al guardar y reiniciar', 'error');
+                });
+            }
+        }
+
+        function restartDevice() {
+            if(confirm('¿Reiniciar el dispositivo? Los cambios no guardados se perderán.')) {
+                showToast('Reiniciando dispositivo...', 'info');
+                
+                fetch('/api/restart', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        showToast('Dispositivo reiniciando...', 'success');
+                    } else {
+                        showToast(data.message || 'Error al reiniciar', 'error');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error restarting device:', error);
+                    showToast('Error al reiniciar dispositivo', 'error');
+                });
+            }
+        }
+
+        function factoryResetConfirm() {
+            if(confirm('¿Realizar reset de fábrica? Esto borrará TODA la configuración y no se puede deshacer.')) {
+                showToast('Realizando reset de fábrica...', 'warning');
+                
+                fetch('/api/factory-reset', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        showToast('Reset de fábrica completado. Reiniciando...', 'success');
+                    } else {
+                        showToast(data.message || 'Error al realizar reset de fábrica', 'error');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error during factory reset:', error);
+                    showToast('Error al realizar reset de fábrica', 'error');
+                });
+            }
+        }
+
+        // Inicialización
+        document.addEventListener('DOMContentLoaded', function() {
+            // Cargar tema guardado
+            const savedTheme = localStorage.getItem('theme') || 'dark';
+            if (savedTheme === 'light') {
+                document.body.classList.add('light-theme');
+                document.getElementById('theme-toggle').textContent = '🌙';
+            } else {
+                document.body.classList.remove('light-theme');
+                document.getElementById('theme-toggle').textContent = '☀️';
+            }
+
+            // Generar opciones de idioma dinámicamente
+            const languageMenu = document.getElementById('language-menu');
+            const languageFlags = {
+                es: '<svg class="flag-icon" viewBox="0 0 500 500"><circle cx="250" cy="250" r="240" fill="#FFFFFF"/><path d="M250 100 C 200 50, 100 150, 150 250 C 200 350, 300 350, 350 250 C 400 150, 300 50, 250 100Z" fill="#8B0000"/><rect x="230" y="300" width="40" height="100" fill="#006400"/><path d="M280 250 Q 320 280, 280 320 T 250 350" fill="#008000"/><path d="M180 380 Q 150 350, 160 300 L 170 310 Q 180 340, 200 370 Z" fill="#006400"/><path d="M320 380 Q 350 350, 340 300 L 330 310 Q 320 340, 300 370 Z" fill="#006400"/><rect x="180" y="420" width="140" height="15" fill="#006400"/><rect x="180" y="435" width="140" height="15" fill="#FFFFFF"/><rect x="180" y="450" width="140" height="15" fill="#8B0000"/></svg>',
+                en: '<svg class="flag-icon" viewBox="0 0 500 500"><defs><clipPath id="circleView"><circle cx="250" cy="250" r="250" /></clipPath></defs><g clip-path="url(#circleView)"><rect width="500" height="500" fill="#FFFFFF"/><rect width="500" height="38.46" y="0" fill="#B22234"/><rect width="500" height="38.46" y="76.92" fill="#B22234"/><rect width="500" height="38.46" y="153.84" fill="#B22234"/><rect width="500" height="38.46" y="230.76" fill="#B22234"/><rect width="500" height="38.46" y="307.68" fill="#B22234"/><rect width="500" height="38.46" y="384.6" fill="#B22234"/><rect width="500" height="38.46" y="461.52" fill="#B22234"/><rect width="263.16" height="269.23" fill="#3C3B6E"/><defs><polygon id="star" points="0,-10 2.9389,-4.0451 9.5106,-3.0902 4.7553,1.5451 5.8779,8.0902 0,5 -5.8779,8.0902 -4.7553,1.5451 -9.5106,-3.0902 -2.9389,-4.0451" fill="#FFFFFF"/></defs><g><g><use xlink:href="#star" transform="translate(21.93, 26.92)"/><use xlink:href="#star" transform="translate(65.79, 26.92)"/><use xlink:href="#star" transform="translate(109.65, 26.92)"/><use xlink:href="#star" transform="translate(153.51, 26.92)"/><use xlink:href="#star" transform="translate(197.37, 26.92)"/><use xlink:href="#star" transform="translate(241.23, 26.92)"/></g><g transform="translate(21.93, 26.92)"><use xlink:href="#star" transform="translate(21.93, 26.92)"/><use xlink:href="#star" transform="translate(65.79, 26.92)"/><use xlink:href="#star" transform="translate(109.65, 26.92)"/><use xlink:href="#star" transform="translate(153.51, 26.92)"/><use xlink:href="#star" transform="translate(197.37, 26.92)"/></g><g transform="translate(0, 53.84)"><use xlink:href="#star" transform="translate(21.93, 26.92)"/><use xlink:href="#star" transform="translate(65.79, 26.92)"/><use xlink:href="#star" transform="translate(109.65, 26.92)"/><use xlink:href="#star" transform="translate(153.51, 26.92)"/><use xlink:href="#star" transform="translate(197.37, 26.92)"/><use xlink:href="#star" transform="translate(241.23, 26.92)"/></g><g transform="translate(21.93, 80.76)"><use xlink:href="#star" transform="translate(21.93, 26.92)"/><use xlink:href="#star" transform="translate(65.79, 26.92)"/><use xlink:href="#star" transform="translate(109.65, 26.92)"/><use xlink:href="#star" transform="translate(153.51, 26.92)"/><use xlink:href="#star" transform="translate(197.37, 26.92)"/></g><g transform="translate(0, 107.68)"><use xlink:href="#star" transform="translate(21.93, 26.92)"/><use xlink:href="#star" transform="translate(65.79, 26.92)"/><use xlink:href="#star" transform="translate(109.65, 26.92)"/><use xlink:href="#star" transform="translate(153.51, 26.92)"/><use xlink:href="#star" transform="translate(197.37, 26.92)"/><use xlink:href="#star" transform="translate(241.23, 26.92)"/></g><g transform="translate(21.93, 134.6)"><use xlink:href="#star" transform="translate(21.93, 26.92)"/><use xlink:href="#star" transform="translate(65.79, 26.92)"/><use xlink:href="#star" transform="translate(109.65, 26.92)"/><use xlink:href="#star" transform="translate(153.51, 26.92)"/><use xlink:href="#star" transform="translate(197.37, 26.92)"/></g><g transform="translate(0, 161.52)"><use xlink:href="#star" transform="translate(21.93, 26.92)"/><use xlink:href="#star" transform="translate(65.79, 26.92)"/><use xlink:href="#star" transform="translate(109.65, 26.92)"/><use xlink:href="#star" transform="translate(153.51, 26.92)"/><use xlink:href="#star" transform="translate(197.37, 26.92)"/><use xlink:href="#star" transform="translate(241.23, 26.92)"/></g><g transform="translate(21.93, 188.44)"><use xlink:href="#star" transform="translate(21.93, 26.92)"/><use xlink:href="#star" transform="translate(65.79, 26.92)"/><use xlink:href="#star" transform="translate(109.65, 26.92)"/><use xlink:href="#star" transform="translate(153.51, 26.92)"/><use xlink:href="#star" transform="translate(197.37, 26.92)"/></g><g transform="translate(0, 215.36)"><use xlink:href="#star" transform="translate(21.93, 26.92)"/><use xlink:href="#star" transform="translate(65.79, 26.92)"/><use xlink:href="#star" transform="translate(109.65, 26.92)"/><use xlink:href="#star" transform="translate(153.51, 26.92)"/><use xlink:href="#star" transform="translate(197.37, 26.92)"/><use xlink:href="#star" transform="translate(241.23, 26.92)"/></g></g></g></svg>',
+                fr: '<svg class="flag-icon" viewBox="0 0 900 600"><rect width="300" height="600" fill="#0055a4"/><rect x="300" width="300" height="600" fill="#ffffff"/><rect x="600" width="300" height="600" fill="#ef4135"/></svg>'
+            };
+
+            Object.keys(translations).forEach(lang => {
+                if (languageFlags[lang]) {
+                    const option = document.createElement('div');
+                    option.className = 'language-option';
+                    option.innerHTML = languageFlags[lang];
+                    option.onclick = () => selectLanguage(lang, languageFlags[lang]);
+                    languageMenu.appendChild(option);
+                }
+            });
+
+            // Cargar idioma guardado
+            const savedLanguage = localStorage.getItem('selectedLanguage') || 'es';
+            const savedFlag = localStorage.getItem('selectedFlag') || languageFlags.es;
+            selectLanguage(savedLanguage, savedFlag);
+
+            // Cargar redes WiFi guardadas
+            loadSavedNetworks();
+
+            // Lógica del panel de acciones móvil
+            const actionsNavLink = document.getElementById('actions-nav-link');
+            const mobileActionsOverlay = document.getElementById('mobile-actions-overlay');
+            const mobileActionsSheet = document.getElementById('mobile-actions-sheet');
+            const desktopActions = document.querySelector('.actions-menu');
+            
+            if (desktopActions) {
+                const clonedActions = desktopActions.cloneNode(true);
+                clonedActions.classList.remove('actions-menu');
+                mobileActionsSheet.appendChild(clonedActions);
+            }
+
+            actionsNavLink.addEventListener('click', function(e) {
+                if (window.innerWidth <= 900) {
+                    mobileActionsOverlay.classList.add('open');
+                    mobileActionsSheet.classList.add('open');
+                }
+            });
+
+            mobileActionsOverlay.addEventListener('click', function() {
+                mobileActionsOverlay.classList.remove('open');
+                mobileActionsSheet.classList.remove('open');
+            });
+        });
+    </script>
 </body>
 </html>

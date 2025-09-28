@@ -1018,6 +1018,332 @@ body {
     }
 }
 
+/* ================================================== */
+/* DASHBOARD UNIFICADO - MÚLTIPLES SENSORES */
+/* ================================================== */
+
+.sensors-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 30px;
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 30px 20px;
+}
+
+.primary-sensor {
+    grid-column: 1 / -1;
+}
+
+.sensor-card {
+    background: var(--card-bg);
+    backdrop-filter: blur(20px);
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    padding: 30px;
+    box-shadow: var(--shadow);
+    transition: all 0.3s ease;
+}
+
+.sensor-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+
+.sensor-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 25px;
+    flex-wrap: wrap;
+    gap: 15px;
+}
+
+.sensor-title {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.sensor-title h2 {
+    font-size: 1.8rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.sensor-type-selector {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.modern-select {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    color: var(--text-primary);
+    padding: 8px 12px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    backdrop-filter: blur(10px);
+}
+
+.modern-select:hover,
+.modern-select:focus {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: var(--primary-color);
+    outline: none;
+}
+
+.modern-select option {
+    background: var(--bg-dark);
+    color: var(--text-primary);
+}
+
+/* ESP-NOW SENSORS GRID */
+.esp-now-sensors-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 20px;
+    margin-top: 30px;
+}
+
+.esp-now-sensor {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 16px;
+    padding: 20px;
+    transition: all 0.3s ease;
+    position: relative;
+    backdrop-filter: blur(15px);
+}
+
+.esp-now-sensor:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+    border-color: var(--secondary-color);
+}
+
+.esp-now-sensor.offline {
+    opacity: 0.6;
+    border-color: var(--error-color);
+}
+
+.esp-now-sensor.offline::before {
+    content: "OFFLINE";
+    position: absolute;
+    top: 10px;
+    right: 15px;
+    background: var(--error-color);
+    color: white;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 0.7rem;
+    font-weight: 500;
+}
+
+.esp-sensor-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.esp-sensor-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.esp-sensor-id {
+    background: var(--secondary-color);
+    color: white;
+    padding: 4px 8px;
+    border-radius: 8px;
+    font-size: 0.8rem;
+    font-weight: 500;
+}
+
+.esp-signal-strength {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.signal-bars {
+    display: flex;
+    gap: 2px;
+    align-items: flex-end;
+}
+
+.signal-bar {
+    width: 3px;
+    background: var(--text-secondary);
+    border-radius: 2px;
+    transition: all 0.3s ease;
+}
+
+.signal-bar.bar-1 { height: 6px; }
+.signal-bar.bar-2 { height: 9px; }
+.signal-bar.bar-3 { height: 12px; }
+.signal-bar.bar-4 { height: 15px; }
+
+.signal-bar.active { background: var(--success-color); }
+
+/* CONTENEDORES ANIMADOS UNIFICADOS */
+.container-svg {
+    width: 100%;
+    height: 320px;
+    border-radius: 15px;
+    background: rgba(0, 0, 0, 0.1);
+    margin-bottom: 20px;
+    transition: all 0.3s ease;
+}
+
+.container-svg:hover {
+    background: rgba(0, 0, 0, 0.15);
+}
+
+/* Animaciones específicas para cada tipo de contenedor */
+.water-animation {
+    animation: waterFlow 3s ease-in-out infinite;
+}
+
+@keyframes waterFlow {
+    0%, 100% { opacity: 0.8; }
+    50% { opacity: 1; }
+}
+
+.water-waves {
+    animation: waves 2s ease-in-out infinite;
+}
+
+@keyframes waves {
+    0%, 100% { transform: translateX(0); }
+    50% { transform: translateX(-5px); }
+}
+
+.filling-animation {
+    animation: filling 1.5s ease-in-out infinite;
+}
+
+@keyframes filling {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.02); }
+}
+
+/* NETWORK STATUS INDICATOR */
+.network-status {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 20px;
+    padding: 15px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+    border-left: 4px solid var(--secondary-color);
+}
+
+.network-status.offline {
+    border-left-color: var(--error-color);
+}
+
+.network-status-icon {
+    font-size: 1.2rem;
+    color: var(--secondary-color);
+}
+
+.network-status.offline .network-status-icon {
+    color: var(--error-color);
+}
+
+.network-status-text {
+    flex: 1;
+}
+
+.network-status-title {
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 5px;
+}
+
+.network-status-detail {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+/* LOADING STATES */
+.loading-sensor {
+    position: relative;
+    overflow: hidden;
+}
+
+.loading-sensor::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+    animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+    0% { left: -100%; }
+    100% { left: 100%; }
+}
+
+/* Responsive para el dashboard unificado */
+@media (max-width: 768px) {
+    .sensors-grid {
+        padding: 20px 15px;
+        gap: 20px;
+    }
+    
+    .sensor-card {
+        padding: 20px;
+    }
+    
+    .sensor-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    
+    .esp-now-sensors-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .container-svg {
+        height: 280px;
+    }
+    
+    .sensor-title h2 {
+        font-size: 1.5rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .sensor-title h2 {
+        font-size: 1.3rem;
+    }
+    
+    .container-svg {
+        height: 250px;
+    }
+    
+    .sensor-card {
+        padding: 15px;
+    }
+}
+
 /* Responsive para el modal */
 @media (max-width: 768px) {
     .modal-content {

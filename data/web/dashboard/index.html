@@ -5,7 +5,7 @@
     <title>Smart Water Sensor Dashboard</title>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="stylesheet" type="text/css" href="style.css">
+    <link rel="stylesheet" type="text/css" href="/web/dashboard/style.css">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
@@ -50,11 +50,20 @@
     </div>
     
     <div class="dashboard-container">
-        <!-- TANQUE ANIMADO SVG -->
-        <div class="tank-container">
-            <div class="tank-card">
-                <div class="tank-header">
-                    <h2>🏠 Tinaco Principal</h2>
+        <!-- DASHBOARD UNIFICADO - SENSOR PRINCIPAL -->
+        <div class="sensors-grid">
+            <div class="sensor-card primary-sensor">
+                <div class="sensor-header">
+                    <div class="sensor-title">
+                        <h2 id="main-sensor-title">🏠 Sensor Principal</h2>
+                        <div class="sensor-type-selector">
+                            <select id="container-type" class="modern-select">
+                                <option value="tank">🏠 Tinaco</option>
+                                <option value="container">🗂️ Contenedor</option>
+                                <option value="cistern">🏗️ Cisterna</option>
+                            </select>
+                        </div>
+                    </div>
                     <div class="connection-status">
                         <span class="status-dot" id="sensor-status-dot"></span>
                         <span id="valor-estado-sensor">--</span>
@@ -62,7 +71,7 @@
                 </div>
                 
                 <div class="tank-visual">
-                    <svg id="water-tank-svg" viewBox="0 0 300 400" class="tank-svg">
+                    <svg id="water-container-svg" viewBox="0 0 300 400" class="container-svg">
                         <!-- Estructura del tanque -->
                         <defs>
                             <!-- Gradiente para el agua -->
@@ -161,6 +170,11 @@
                     </div>
                 </div>
             </div>
+            
+            <!-- SENSORES ESP-NOW ADICIONALES -->
+            <div id="esp-now-sensors" class="esp-now-sensors-grid">
+                <!-- Los sensores ESP-NOW se agregan dinámicamente aquí -->
+            </div>
         </div>
 
         <!-- CONTROLES -->
@@ -224,7 +238,7 @@
         </div>
     </div>
 
-    <script src="/app.js"></script>
+    <script src="/web/dashboard/app.js"></script>
 </body>
 
 </html>

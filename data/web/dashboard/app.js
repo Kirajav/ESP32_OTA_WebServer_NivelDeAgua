@@ -1,22 +1,35 @@
-// === SMART WATER SENSOR DASHBOARD - MODERN VERSION ===
-// Sistema de monitoreo inteligente con animaciones SVG
+// === SMART WATER SENSOR DASHBOARD UNIFICADO - ENTERPRISE VERSION ===
+// Sistema de monitoreo inteligente con múltiples sensores ESP-NOW
 
 // --- Variables Globales ---
 let websocket;
 let isConnected = false;
 let currentData = {};
+let espNowSensors = [];
 let animationInterval;
+let containerType = 'tank'; // 'tank', 'container', 'cistern'
+let containerSVGs = {};
+let networkStatus = {
+    connected: false,
+    deviceCount: 0,
+    lastUpdate: null
+};
 
 // --- Inicialización ---
 window.addEventListener("load", () => {
-    console.log("🚀 Iniciando Smart Water Sensor Dashboard...");
+    console.log("🚀 Iniciando Smart Water Sensor Dashboard Unificado...");
+    initContainerSVGs();
+    initContainerTypeSelector();
     initWebSocket();
     initButtons();
     initAnimations();
     startPolling();
     loadDisplayStatus();
     setupMultiSensorButton();
-    setupSensorConfig(); // ⚙️ Configuración del sensor
+    setupSensorConfig();
+    loadESPNowSensors();
+    startESPNowPolling();
+    updateNetworkStatus();
 });
 
 // --- WebSocket Avanzado ---
@@ -88,7 +101,7 @@ function updateConnectionStatus(connected) {
 
 // --- Funciones de Display Status ---
 function loadDisplayStatus() {
-    fetch('/displayStatus')
+    fetch('/api/status')
         .then(response => response.json())
         .then(data => {
             console.log("📱 Estado display cargado:", data);
@@ -114,7 +127,7 @@ function startPolling() {
     
     const poll = async () => {
         try {
-            const response = await fetch('/data');
+            const response = await fetch('/api/sensor-data');
             const data = await response.json();
             
             // Actualizar datos globales
@@ -310,7 +323,7 @@ function toggleDisplay() {
     console.log("🔄 Alternando display...");
     showToast("Alternando display OLED...", "info");
     
-    fetch('/toggle', { method: 'POST' })
+    fetch('/api/toggle-display', { method: 'POST' })
         .then(response => response.text())
         .then(data => {
             console.log("✅ Display alternado:", data);
@@ -327,7 +340,7 @@ function resetESP32() {
         console.log("🔄 Reiniciando ESP32...");
         showToast("Reiniciando ESP32...", "warning");
         
-        fetch('/reset', { method: 'POST' })
+        fetch('/api/restart', { method: 'POST' })
             .then(() => {
                 showToast("ESP32 reiniciado. Reconectando...", "info");
                 setTimeout(() => location.reload(), 3000);
@@ -344,7 +357,7 @@ function resetWiFiConfig() {
         console.log("📶 Reiniciando configuración WiFi...");
         showToast("Reiniciando configuración WiFi...", "warning");
         
-        fetch('/wifi-reset', { method: 'POST' })
+        fetch('/api/factory-reset', { method: 'POST' })
             .then(() => {
                 showToast("Configuración WiFi reiniciada", "info");
                 setTimeout(() => location.reload(), 2000);
@@ -554,19 +567,651 @@ function closeSensorConfigModal() {
     }
 }
 
+// ================================================== 
+// FUNCIONES DEL DASHBOARD UNIFICADO
+// ==================================================
+
+// --- Inicialización de Contenedores SVG ---
+function initContainerSVGs() {
+    containerSVGs = {
+        tank: generateTankSVG(),
+        container: generateContainerSVG(),
+        cistern: generateCisternSVG()
+    };
+    
+    // Cargar tipo de contenedor guardado
+    const savedType = localStorage.getItem('containerType') || 'tank';
+    containerType = savedType;
+    
+    renderContainerSVG();
+}
+
+function initContainerTypeSelector() {
+    const selector = document.getElementById('container-type');
+    if (selector) {
+        selector.value = containerType;
+        selector.addEventListener('change', (e) => {
+            containerType = e.target.value;
+            localStorage.setItem('containerType', containerType);
+            renderContainerSVG();
+            updateMainSensorTitle();
+            
+            // Re-animar con los datos actuales
+            if (currentData.Porcentaje !== undefined) {
+                updateContainerAnimation(currentData);
+            }
+            
+            showToast(`Cambiado a ${getContainerName(containerType)}`, 'success');
+        });
+    }
+}
+
+function updateMainSensorTitle() {
+    const titleElement = document.getElementById('main-sensor-title');
+    if (titleElement) {
+        const icons = {
+            tank: '🏠',
+            container: '🗂️', 
+            cistern: '🏗️'
+        };
+        const names = {
+            tank: 'Tinaco Principal',
+            container: 'Contenedor Principal',
+            cistern: 'Cisterna Principal'
+        };
+        
+        titleElement.textContent = `${icons[containerType]} ${names[containerType]}`;
+    }
+}
+
+function getContainerName(type) {
+    const names = {
+        tank: 'Tinaco',
+        container: 'Contenedor',
+        cistern: 'Cisterna'
+    };
+    return names[type] || 'Contenedor';
+}
+
+// --- Generadores de SVG para cada tipo de contenedor ---
+function generateTankSVG() {
+    return `
+        <defs>
+            <linearGradient id="waterGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" style="stop-color:#4FC3F7;stop-opacity:0.9" />
+                <stop offset="50%" style="stop-color:#29B6F6;stop-opacity:0.8" />
+                <stop offset="100%" style="stop-color:#0288D1;stop-opacity:1" />
+            </linearGradient>
+            
+            <linearGradient id="tankGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" style="stop-color:#E0E0E0;stop-opacity:0.9" />
+                <stop offset="50%" style="stop-color:#F5F5F5;stop-opacity:0.7" />
+                <stop offset="100%" style="stop-color:#E0E0E0;stop-opacity:0.9" />
+            </linearGradient>
+            
+            <pattern id="wavePattern" x="0" y="0" width="100" height="20" patternUnits="userSpaceOnUse">
+                <path d="M0,10 Q25,0 50,10 T100,10 V20 H0 Z" fill="rgba(255,255,255,0.1)" />
+            </pattern>
+            
+            <clipPath id="tankClip">
+                <path d="M50,80 L250,80 L250,350 Q250,370 230,370 L70,370 Q50,370 50,350 Z" />
+            </clipPath>
+        </defs>
+        
+        <!-- Cuerpo del tanque -->
+        <path d="M50,80 L250,80 L250,350 Q250,370 230,370 L70,370 Q50,370 50,350 Z" 
+              fill="url(#tankGradient)" stroke="#B0B0B0" stroke-width="3" opacity="0.8"/>
+        
+        <!-- Tapa del tanque -->
+        <ellipse cx="150" cy="80" rx="100" ry="15" fill="url(#tankGradient)" stroke="#B0B0B0" stroke-width="3"/>
+        <ellipse cx="150" cy="75" rx="95" ry="12" fill="#F8F8F8" opacity="0.9"/>
+        
+        <!-- Agua animada -->
+        <g clip-path="url(#tankClip)">
+            <rect id="water-level" x="50" y="350" width="200" height="0" 
+                  fill="url(#waterGradient)" opacity="0.9" class="water-animation"/>
+            <rect id="water-waves" x="50" y="350" width="200" height="0" 
+                  fill="url(#wavePattern)" opacity="0.6" class="water-waves"/>
+        </g>
+        
+        <!-- Medidor lateral -->
+        <g class="level-indicator">
+            <rect x="20" y="80" width="20" height="270" fill="rgba(0,0,0,0.1)" rx="10"/>
+            <rect id="level-bar" x="22" y="348" width="16" height="0" fill="#4CAF50" rx="8"/>
+            
+            <!-- Marcas del medidor -->
+            <line x1="15" y1="95" x2="25" y2="95" stroke="#666" stroke-width="2"/>
+            <text x="10" y="100" fill="#666" font-size="12" text-anchor="end">100%</text>
+            
+            <line x1="15" y1="162" x2="25" y2="162" stroke="#666" stroke-width="2"/>
+            <text x="10" y="167" fill="#666" font-size="12" text-anchor="end">75%</text>
+            
+            <line x1="15" y1="230" x2="25" y2="230" stroke="#666" stroke-width="2"/>
+            <text x="10" y="235" fill="#666" font-size="12" text-anchor="end">50%</text>
+            
+            <line x1="15" y1="297" x2="25" y2="297" stroke="#666" stroke-width="2"/>
+            <text x="10" y="302" fill="#666" font-size="12" text-anchor="end">25%</text>
+            
+            <line x1="15" y1="345" x2="25" y2="345" stroke="#666" stroke-width="2"/>
+            <text x="10" y="350" fill="#666" font-size="12" text-anchor="end">0%</text>
+        </g>
+        
+        <!-- Sensor en la parte superior -->
+        <circle cx="150" cy="50" r="8" fill="#FF5722" opacity="0.9"/>
+        <rect x="145" y="42" width="10" height="8" fill="#FF5722" opacity="0.9"/>
+        <text x="150" y="35" fill="#FF5722" font-size="10" text-anchor="middle" font-weight="bold">SENSOR</text>
+    `;
+}
+
+function generateContainerSVG() {
+    return `
+        <defs>
+            <linearGradient id="waterGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" style="stop-color:#4FC3F7;stop-opacity:0.9" />
+                <stop offset="50%" style="stop-color:#29B6F6;stop-opacity:0.8" />
+                <stop offset="100%" style="stop-color:#0288D1;stop-opacity:1" />
+            </linearGradient>
+            
+            <linearGradient id="containerGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" style="stop-color:#BDBDBD;stop-opacity:0.9" />
+                <stop offset="50%" style="stop-color:#E0E0E0;stop-opacity:0.7" />
+                <stop offset="100%" style="stop-color:#BDBDBD;stop-opacity:0.9" />
+            </linearGradient>
+            
+            <pattern id="wavePattern" x="0" y="0" width="80" height="15" patternUnits="userSpaceOnUse">
+                <path d="M0,8 Q20,0 40,8 T80,8 V15 H0 Z" fill="rgba(255,255,255,0.15)" />
+            </pattern>
+            
+            <clipPath id="containerClip">
+                <rect x="60" y="90" width="180" height="280" rx="5"/>
+            </clipPath>
+        </defs>
+        
+        <!-- Cuerpo del contenedor (más rectangular) -->
+        <rect x="60" y="90" width="180" height="280" rx="5" 
+              fill="url(#containerGradient)" stroke="#9E9E9E" stroke-width="3" opacity="0.8"/>
+        
+        <!-- Tapa del contenedor -->
+        <rect x="55" y="85" width="190" height="15" rx="8" 
+              fill="url(#containerGradient)" stroke="#9E9E9E" stroke-width="3"/>
+        
+        <!-- Agua animada -->
+        <g clip-path="url(#containerClip)">
+            <rect id="water-level" x="60" y="370" width="180" height="0" 
+                  fill="url(#waterGradient)" opacity="0.9" class="water-animation"/>
+            <rect id="water-waves" x="60" y="370" width="180" height="0" 
+                  fill="url(#wavePattern)" opacity="0.6" class="water-waves"/>
+        </g>
+        
+        <!-- Medidor lateral -->
+        <g class="level-indicator">
+            <rect x="25" y="90" width="18" height="280" fill="rgba(0,0,0,0.1)" rx="9"/>
+            <rect id="level-bar" x="27" y="368" width="14" height="0" fill="#4CAF50" rx="7"/>
+            
+            <!-- Marcas del medidor -->
+            <line x1="20" y1="100" x2="30" y2="100" stroke="#666" stroke-width="2"/>
+            <text x="15" y="105" fill="#666" font-size="12" text-anchor="end">100%</text>
+            
+            <line x1="20" y1="160" x2="30" y2="160" stroke="#666" stroke-width="2"/>
+            <text x="15" y="165" fill="#666" font-size="12" text-anchor="end">75%</text>
+            
+            <line x1="20" y1="230" x2="30" y2="230" stroke="#666" stroke-width="2"/>
+            <text x="15" y="235" fill="#666" font-size="12" text-anchor="end">50%</text>
+            
+            <line x1="20" y1="300" x2="30" y2="300" stroke="#666" stroke-width="2"/>
+            <text x="15" y="305" fill="#666" font-size="12" text-anchor="end">25%</text>
+            
+            <line x1="20" y1="365" x2="30" y2="365" stroke="#666" stroke-width="2"/>
+            <text x="15" y="370" fill="#666" font-size="12" text-anchor="end">0%</text>
+        </g>
+        
+        <!-- Asas del contenedor -->
+        <ellipse cx="45" cy="200" rx="8" ry="25" fill="none" stroke="#9E9E9E" stroke-width="3"/>
+        <ellipse cx="255" cy="200" rx="8" ry="25" fill="none" stroke="#9E9E9E" stroke-width="3"/>
+        
+        <!-- Sensor en la parte superior -->
+        <circle cx="150" cy="60" r="8" fill="#FF5722" opacity="0.9"/>
+        <rect x="145" y="52" width="10" height="8" fill="#FF5722" opacity="0.9"/>
+        <text x="150" y="45" fill="#FF5722" font-size="10" text-anchor="middle" font-weight="bold">SENSOR</text>
+    `;
+}
+
+function generateCisternSVG() {
+    return `
+        <defs>
+            <linearGradient id="waterGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" style="stop-color:#4FC3F7;stop-opacity:0.9" />
+                <stop offset="50%" style="stop-color:#29B6F6;stop-opacity:0.8" />
+                <stop offset="100%" style="stop-color:#0288D1;stop-opacity:1" />
+            </linearGradient>
+            
+            <linearGradient id="cisternGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" style="stop-color:#795548;stop-opacity:0.9" />
+                <stop offset="50%" style="stop-color:#8D6E63;stop-opacity:0.7" />
+                <stop offset="100%" style="stop-color:#795548;stop-opacity:0.9" />
+            </linearGradient>
+            
+            <pattern id="wavePattern" x="0" y="0" width="120" height="25" patternUnits="userSpaceOnUse">
+                <path d="M0,12 Q30,0 60,12 T120,12 V25 H0 Z" fill="rgba(255,255,255,0.1)" />
+            </pattern>
+            
+            <clipPath id="cisternClip">
+                <ellipse cx="150" cy="360" rx="120" ry="20"/>
+                <rect x="30" y="100" width="240" height="260"/>
+            </clipPath>
+        </defs>
+        
+        <!-- Base de la cisterna (elíptica) -->
+        <ellipse cx="150" cy="380" rx="125" ry="25" fill="url(#cisternGradient)" stroke="#5D4037" stroke-width="3"/>
+        
+        <!-- Cuerpo de la cisterna -->
+        <rect x="25" y="100" width="250" height="280" 
+              fill="url(#cisternGradient)" stroke="#5D4037" stroke-width="3" opacity="0.8"/>
+        
+        <!-- Tapa de la cisterna -->
+        <ellipse cx="150" cy="100" rx="125" ry="25" fill="url(#cisternGradient)" stroke="#5D4037" stroke-width="3"/>
+        <ellipse cx="150" cy="95" rx="120" ry="20" fill="#A1887F" opacity="0.9"/>
+        
+        <!-- Agua animada -->
+        <g clip-path="url(#cisternClip)">
+            <ellipse id="water-level" cx="150" cy="380" rx="120" ry="0" 
+                    fill="url(#waterGradient)" opacity="0.9" class="water-animation"/>
+            <rect id="water-body" x="30" y="380" width="240" height="0" 
+                  fill="url(#waterGradient)" opacity="0.9" class="water-animation"/>
+            <rect id="water-waves" x="30" y="380" width="240" height="0" 
+                  fill="url(#wavePattern)" opacity="0.6" class="water-waves"/>
+        </g>
+        
+        <!-- Medidor lateral -->
+        <g class="level-indicator">
+            <rect x="10" y="100" width="22" height="280" fill="rgba(0,0,0,0.1)" rx="11"/>
+            <rect id="level-bar" x="12" y="378" width="18" height="0" fill="#4CAF50" rx="9"/>
+            
+            <!-- Marcas del medidor -->
+            <line x1="5" y1="110" x2="15" y2="110" stroke="#666" stroke-width="2"/>
+            <text x="0" y="115" fill="#666" font-size="12" text-anchor="end">100%</text>
+            
+            <line x1="5" y1="170" x2="15" y2="170" stroke="#666" stroke-width="2"/>
+            <text x="0" y="175" fill="#666" font-size="12" text-anchor="end">75%</text>
+            
+            <line x1="5" y1="240" x2="15" y2="240" stroke="#666" stroke-width="2"/>
+            <text x="0" y="245" fill="#666" font-size="12" text-anchor="end">50%</text>
+            
+            <line x1="5" y1="310" x2="15" y2="310" stroke="#666" stroke-width="2"/>
+            <text x="0" y="315" fill="#666" font-size="12" text-anchor="end">25%</text>
+            
+            <line x1="5" y1="375" x2="15" y2="375" stroke="#666" stroke-width="2"/>
+            <text x="0" y="380" fill="#666" font-size="12" text-anchor="end">0%</text>
+        </g>
+        
+        <!-- Escalera de acceso -->
+        <g stroke="#5D4037" stroke-width="2" fill="none">
+            <line x1="280" y1="100" x2="280" y2="380"/>
+            <line x1="275" y1="130" x2="285" y2="130"/>
+            <line x1="275" y1="160" x2="285" y2="160"/>
+            <line x1="275" y1="190" x2="285" y2="190"/>
+            <line x1="275" y1="220" x2="285" y2="220"/>
+            <line x1="275" y1="250" x2="285" y2="250"/>
+            <line x1="275" y1="280" x2="285" y2="280"/>
+            <line x1="275" y1="310" x2="285" y2="310"/>
+            <line x1="275" y1="340" x2="285" y2="340"/>
+            <line x1="275" y1="370" x2="285" y2="370"/>
+        </g>
+        
+        <!-- Sensor en la parte superior -->
+        <circle cx="150" cy="70" r="8" fill="#FF5722" opacity="0.9"/>
+        <rect x="145" y="62" width="10" height="8" fill="#FF5722" opacity="0.9"/>
+        <text x="150" y="55" fill="#FF5722" font-size="10" text-anchor="middle" font-weight="bold">SENSOR</text>
+    `;
+}
+
+function renderContainerSVG() {
+    const svgElement = document.getElementById('water-container-svg');
+    if (svgElement && containerSVGs[containerType]) {
+        svgElement.innerHTML = containerSVGs[containerType];
+    }
+}
+
+// --- Actualización de animaciones por tipo de contenedor ---
+function updateContainerAnimation(data) {
+    const percentage = parseFloat(data.Porcentaje) || 0;
+    const isValid = percentage >= 0 && percentage <= 100;
+    
+    if (!isValid) {
+        console.warn('Datos de sensor inválidos:', data);
+        return;
+    }
+    
+    switch (containerType) {
+        case 'tank':
+            updateTankAnimation(data);
+            break;
+        case 'container':
+            updateContainerAnimationRect(data);
+            break;
+        case 'cistern':
+            updateCisternAnimation(data);
+            break;
+    }
+}
+
+function updateTankAnimation(data) {
+    const percentage = parseFloat(data.Porcentaje) || 0;
+    const waterLevel = document.getElementById('water-level');
+    const waterWaves = document.getElementById('water-waves');
+    const levelBar = document.getElementById('level-bar');
+    
+    if (waterLevel && waterWaves && levelBar) {
+        const maxHeight = 270; // Altura del tanque
+        const height = (percentage / 100) * maxHeight;
+        const yPosition = 350 - height;
+        
+        // Animación del agua
+        waterLevel.setAttribute('y', yPosition);
+        waterLevel.setAttribute('height', height);
+        
+        waterWaves.setAttribute('y', yPosition);
+        waterWaves.setAttribute('height', Math.min(height, 20));
+        
+        // Barra indicadora
+        levelBar.setAttribute('y', yPosition + 348 - yPosition);
+        levelBar.setAttribute('height', height);
+        
+        // Color según el nivel
+        const color = percentage > 50 ? '#4CAF50' : 
+                     percentage > 25 ? '#FF9800' : '#F44336';
+        levelBar.setAttribute('fill', color);
+    }
+}
+
+function updateContainerAnimationRect(data) {
+    const percentage = parseFloat(data.Porcentaje) || 0;
+    const waterLevel = document.getElementById('water-level');
+    const waterWaves = document.getElementById('water-waves');
+    const levelBar = document.getElementById('level-bar');
+    
+    if (waterLevel && waterWaves && levelBar) {
+        const maxHeight = 280; // Altura del contenedor
+        const height = (percentage / 100) * maxHeight;
+        const yPosition = 370 - height;
+        
+        // Animación del agua
+        waterLevel.setAttribute('y', yPosition);
+        waterLevel.setAttribute('height', height);
+        
+        waterWaves.setAttribute('y', yPosition);
+        waterWaves.setAttribute('height', Math.min(height, 15));
+        
+        // Barra indicadora
+        levelBar.setAttribute('y', yPosition + 368 - yPosition);
+        levelBar.setAttribute('height', height);
+        
+        // Color según el nivel
+        const color = percentage > 50 ? '#4CAF50' : 
+                     percentage > 25 ? '#FF9800' : '#F44336';
+        levelBar.setAttribute('fill', color);
+    }
+}
+
+function updateCisternAnimation(data) {
+    const percentage = parseFloat(data.Porcentaje) || 0;
+    const waterLevel = document.getElementById('water-level');
+    const waterBody = document.getElementById('water-body');
+    const waterWaves = document.getElementById('water-waves');
+    const levelBar = document.getElementById('level-bar');
+    
+    if (waterLevel && waterBody && waterWaves && levelBar) {
+        const maxHeight = 280; // Altura de la cisterna
+        const height = (percentage / 100) * maxHeight;
+        const yPosition = 380 - height;
+        
+        // Parte elíptica del agua (base)
+        const ellipseHeight = Math.min(height, 25);
+        waterLevel.setAttribute('ry', ellipseHeight);
+        waterLevel.setAttribute('cy', 380 - height + ellipseHeight);
+        
+        // Cuerpo rectangular del agua
+        if (height > 25) {
+            waterBody.setAttribute('y', yPosition);
+            waterBody.setAttribute('height', height - 25);
+        } else {
+            waterBody.setAttribute('height', 0);
+        }
+        
+        // Ondas
+        waterWaves.setAttribute('y', yPosition);
+        waterWaves.setAttribute('height', Math.min(height, 25));
+        
+        // Barra indicadora
+        levelBar.setAttribute('y', yPosition + 378 - yPosition);
+        levelBar.setAttribute('height', height);
+        
+        // Color según el nivel
+        const color = percentage > 50 ? '#4CAF50' : 
+                     percentage > 25 ? '#FF9800' : '#F44336';
+        levelBar.setAttribute('fill', color);
+    }
+}
+
+// --- ESP-NOW Sensors Management ---
+function loadESPNowSensors() {
+    console.log("🔍 Cargando sensores ESP-NOW...");
+    
+    fetch('/multi-sensor-data')
+        .then(response => response.json())
+        .then(data => {
+            console.log("📡 Datos ESP-NOW recibidos:", data);
+            
+            if (data.sensors && Array.isArray(data.sensors)) {
+                espNowSensors = data.sensors;
+                renderESPNowSensors();
+                networkStatus.connected = true;
+                networkStatus.deviceCount = data.sensors.length;
+                networkStatus.lastUpdate = new Date();
+            } else {
+                espNowSensors = [];
+                networkStatus.connected = false;
+                networkStatus.deviceCount = 0;
+            }
+            
+            updateNetworkStatus();
+        })
+        .catch(error => {
+            console.error("❌ Error cargando sensores ESP-NOW:", error);
+            espNowSensors = [];
+            networkStatus.connected = false;
+            networkStatus.deviceCount = 0;
+            updateNetworkStatus();
+        });
+}
+
+function renderESPNowSensors() {
+    const container = document.getElementById('esp-now-sensors');
+    if (!container) return;
+    
+    container.innerHTML = '';
+    
+    if (espNowSensors.length === 0) {
+        container.innerHTML = `
+            <div class="esp-now-sensor offline">
+                <div class="esp-sensor-header">
+                    <div class="esp-sensor-title">
+                        📡 Sin sensores ESP-NOW
+                    </div>
+                </div>
+                <p style="color: var(--text-secondary); margin-top: 10px;">
+                    No se encontraron sensores adicionales en la red mesh.
+                </p>
+            </div>
+        `;
+        return;
+    }
+    
+    espNowSensors.forEach((sensor, index) => {
+        const sensorElement = createESPNowSensorElement(sensor, index);
+        container.appendChild(sensorElement);
+    });
+}
+
+function createESPNowSensorElement(sensor, index) {
+    const sensorDiv = document.createElement('div');
+    sensorDiv.className = `esp-now-sensor ${sensor.online ? '' : 'offline'}`;
+    sensorDiv.id = `esp-sensor-${sensor.id || index}`;
+    
+    const signalStrength = sensor.rssi || -70;
+    const signalBars = Math.max(1, Math.min(4, Math.floor((signalStrength + 100) / 15)));
+    
+    sensorDiv.innerHTML = `
+        <div class="esp-sensor-header">
+            <div class="esp-sensor-title">
+                📡 ${sensor.name || `Sensor ${index + 1}`}
+                <span class="esp-sensor-id">ID: ${sensor.id || index + 1}</span>
+            </div>
+            <div class="esp-signal-strength">
+                <span>${signalStrength}dBm</span>
+                <div class="signal-bars">
+                    ${Array.from({length: 4}, (_, i) => 
+                        `<div class="signal-bar bar-${i+1} ${i < signalBars ? 'active' : ''}"></div>`
+                    ).join('')}
+                </div>
+            </div>
+        </div>
+        
+        <div class="esp-sensor-visual">
+            <svg viewBox="0 0 200 150" class="esp-container-svg">
+                <!-- Mini contenedor -->
+                <rect x="40" y="30" width="120" height="90" rx="5" 
+                      fill="rgba(255,255,255,0.1)" stroke="#666" stroke-width="2"/>
+                
+                <!-- Agua -->
+                <rect x="42" y="${120 - (sensor.percentage || 0) * 0.88}" 
+                      width="116" height="${(sensor.percentage || 0) * 0.88}" 
+                      fill="url(#waterGradient)" opacity="0.8"/>
+                
+                <!-- Sensor -->
+                <circle cx="100" cy="20" r="4" fill="#FF5722"/>
+                <text x="100" y="15" fill="#FF5722" font-size="8" text-anchor="middle">S</text>
+            </svg>
+        </div>
+        
+        <div class="esp-sensor-data">
+            <div class="data-item">
+                <span style="font-size: 0.9rem;">💧</span>
+                <div class="data-content">
+                    <span class="data-value">${sensor.waterLevel || '--'}</span>
+                    <span class="data-unit">L</span>
+                </div>
+            </div>
+            
+            <div class="data-item">
+                <span style="font-size: 0.9rem;">%</span>
+                <div class="data-content">
+                    <span class="data-value">${sensor.percentage || '--'}</span>
+                    <span class="data-unit">%</span>
+                </div>
+            </div>
+            
+            <div class="data-item">
+                <span style="font-size: 0.9rem;">📏</span>
+                <div class="data-content">
+                    <span class="data-value">${sensor.distance || '--'}</span>
+                    <span class="data-unit">cm</span>
+                </div>
+            </div>
+        </div>
+        
+        ${sensor.lastUpdate ? `
+            <div class="esp-sensor-timestamp">
+                <span style="font-size: 0.8rem; color: var(--text-secondary);">
+                    Actualizado: ${new Date(sensor.lastUpdate).toLocaleTimeString()}
+                </span>
+            </div>
+        ` : ''}
+    `;
+    
+    return sensorDiv;
+}
+
+function updateNetworkStatus() {
+    // Buscar o crear el indicador de estado de red
+    let statusElement = document.querySelector('.network-status');
+    
+    if (!statusElement) {
+        statusElement = document.createElement('div');
+        statusElement.className = 'network-status';
+        
+        // Insertar antes del grid de sensores
+        const sensorsGrid = document.querySelector('.sensors-grid');
+        if (sensorsGrid && sensorsGrid.parentNode) {
+            sensorsGrid.parentNode.insertBefore(statusElement, sensorsGrid);
+        }
+    }
+    
+    const isOnline = networkStatus.connected && networkStatus.deviceCount > 0;
+    statusElement.className = `network-status ${isOnline ? '' : 'offline'}`;
+    
+    statusElement.innerHTML = `
+        <div class="network-status-icon">
+            ${isOnline ? '🌐' : '📴'}
+        </div>
+        <div class="network-status-text">
+            <div class="network-status-title">
+                Red ESP-NOW ${isOnline ? 'Activa' : 'Inactiva'}
+            </div>
+            <div class="network-status-detail">
+                ${isOnline ? 
+                    `${networkStatus.deviceCount} sensores conectados` :
+                    'Sin sensores adicionales detectados'
+                }
+                ${networkStatus.lastUpdate ? 
+                    ` • Última actualización: ${networkStatus.lastUpdate.toLocaleTimeString()}` : 
+                    ''
+                }
+            </div>
+        </div>
+    `;
+}
+
+function startESPNowPolling() {
+    // Polling cada 15 segundos para sensores ESP-NOW
+    setInterval(() => {
+        loadESPNowSensors();
+    }, 15000);
+    
+    console.log("🔄 Polling ESP-NOW iniciado (cada 15 segundos)");
+}
+
+// --- Reemplazar función updateTankAnimation original ---
+function updateTankAnimation(data) {
+    // Usar la función unificada
+    updateContainerAnimation(data);
+}
+
 // --- Debug y Logging ---
 function logSensorData() {
-    console.table(currentData);
+    console.table({
+        main: currentData,
+        espNow: espNowSensors,
+        network: networkStatus
+    });
 }
 
 // Exponer funciones globales para debug
 window.smartSensor = {
     data: currentData,
+    espNowSensors,
+    networkStatus,
+    containerType,
     isConnected,
     logData: logSensorData,
     showToast,
-    updateTankAnimation: () => updateTankAnimation(currentData),
-    showSensorConfig: showSensorConfigModal
+    updateContainerAnimation: () => updateContainerAnimation(currentData),
+    showSensorConfig: showSensorConfigModal,
+    loadESPNow: loadESPNowSensors,
+    switchContainer: (type) => {
+        document.getElementById('container-type').value = type;
+        document.getElementById('container-type').dispatchEvent(new Event('change'));
+    }
 };
 
-console.log("💧 Smart Water Sensor Dashboard cargado completamente!");
+console.log("💧 Smart Water Sensor Dashboard Unificado cargado completamente!");

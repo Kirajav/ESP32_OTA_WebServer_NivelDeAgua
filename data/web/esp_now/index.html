@@ -2,322 +2,625 @@
 
 <html lang="es"><html lang="es">
 
+
+
 <head><head>
 
-    <!-- =============================================== -->    <meta charset="UTF-8">
+    <!-- =============================================== -->    <!-- =============================================== -->
 
-    <!-- CONFIGURACIÓN BÁSICA DEL DOCUMENTO           -->    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- CONFIGURACIÓN BÁSICA DEL DOCUMENTO           -->    <!-- CONFIGURACIÓN BÁSICA DEL DOCUMENTO           -->
 
-    <!-- =============================================== -->    <title>ESP-NOW Network Manager</title>
+    <!-- =============================================== -->    <!-- =============================================== -->
 
-    <meta charset="UTF-8">    <link rel="stylesheet" href="css/style.css">
+    <meta charset="UTF-8">    <meta charset="UTF-8">
 
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <title>ESP-NOW Network Manager</title>    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <title>ESP-NOW Network Manager</title>    <title>ESP-NOW Network Manager</title>
 
-    </head>
 
-    <!-- =============================================== --><body>
 
-    <!-- RECURSOS EXTERNOS                            -->    <div class="espnow-container">
+    <!-- =============================================== -->    <!-- =============================================== -->
 
-    <!-- =============================================== -->        .espnow-container {
+    <!-- RECURSOS EXTERNOS                            -->    <!-- RECURSOS EXTERNOS                            -->
 
-    <!-- Estilos CSS especializados para ESP-NOW -->            max-width: 1400px;
+    <!-- =============================================== -->    <!-- =============================================== -->
 
-    <link rel="stylesheet" href="css/style.css">            margin: 0 auto;
+    <!-- Estilos CSS especializados para ESP-NOW -->    <!-- Estilos CSS especializados para ESP-NOW -->
 
-    <!-- Iconos de Material Design para elementos de interfaz -->            padding: 20px;
+    <link rel="stylesheet" href="/web/esp_now/style.css">    <link rel="stylesheet" href="/web/esp_now/style.css">
 
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />            min-height: 100vh;
+    <!-- Iconos de Material Design para elementos de interfaz -->    <!-- Iconos de Material Design para elementos de interfaz -->
 
-    <!-- Fuente Inter para texto profesional -->        }
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
 
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">        
+    <!-- Fuente Inter para texto profesional -->    <!-- Fuente Inter para texto profesional -->
 
-</head>        .espnow-header {
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 
-<body>            background: var(--card-bg);
+</head></head>
 
-    <!-- =============================================== -->            backdrop-filter: blur(20px);
 
-    <!-- CONTENEDOR PRINCIPAL ESP-NOW                 -->            border-radius: 20px;
 
-    <!-- =============================================== -->            padding: 30px;
+<body><body>
 
-    <div class="espnow-container">            margin-bottom: 30px;
+    <!-- =============================================== -->    <!-- =============================================== -->
 
-        <!-- =========================================== -->            text-align: center;
+    <!-- CONTENEDOR PRINCIPAL ESP-NOW                 -->    <!-- CONTENEDOR PRINCIPAL ESP-NOW                 -->
 
-        <!-- ENCABEZADO DE LA APLICACIÓN              -->            border: 1px solid var(--border-color);
+    <!-- =============================================== -->    <!-- =============================================== -->
 
-        <!-- =========================================== -->        }
+    <div class="espnow-container">    <div class="espnow-container">
 
-        <header class="header">        
 
-            <div class="header-content">        .espnow-header h1 {
 
-                <div class="header-left">            font-size: 2.5rem;
+        <!-- ============================================= -->    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">        
 
-                    <h1 class="header-title">            margin-bottom: 10px;
+        <!-- HEADER CON CONTROLES PRINCIPALES            -->
 
-                        <span class="header-icon">📡</span>            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        <!-- ============================================= --></head>        .espnow-header {
 
-                        ESP-NOW Manager            -webkit-background-clip: text;
+        <div class="espnow-header">
 
-                    </h1>            -webkit-text-fill-color: transparent;
+            <div class="header-content"><body>            background: var(--card-bg);
 
-                    <p class="header-subtitle">Gestor de Red Mesh IoT</p>        }
+                <div class="header-left">
+
+                    <div class="title-section">    <!-- =============================================== -->            backdrop-filter: blur(20px);
+
+                        <h1 class="espnow-title">
+
+                            <span class="material-symbols-outlined">hub</span>    <!-- CONTENEDOR PRINCIPAL ESP-NOW                 -->            border-radius: 20px;
+
+                            ESP-NOW Network Manager
+
+                        </h1>    <!-- =============================================== -->            padding: 30px;
+
+                        <p class="espnow-subtitle">Professional Mesh Network Administration</p>
+
+                    </div>    <div class="espnow-container">            margin-bottom: 30px;
+
+                </div>
+
+                        <!-- =========================================== -->            text-align: center;
+
+                <div class="header-right">
+
+                    <div class="header-controls">        <!-- ENCABEZADO DE LA APLICACIÓN              -->            border: 1px solid var(--border-color);
+
+                        <!-- Network Status Indicator -->
+
+                        <div class="network-status" id="network-status">        <!-- =========================================== -->        }
+
+                            <span class="status-indicator active"></span>
+
+                            <span class="status-text">Network Active</span>        <header class="header">        
+
+                        </div>
+
+                                    <div class="header-content">        .espnow-header h1 {
+
+                        <!-- Theme Toggle -->
+
+                        <button class="theme-toggle" id="theme-toggle" title="Cambiar tema">                <div class="header-left">            font-size: 2.5rem;
+
+                            <span class="material-symbols-outlined">dark_mode</span>
+
+                        </button>                    <h1 class="header-title">            margin-bottom: 10px;
+
+                        
+
+                        <!-- Home Button -->                        <span class="header-icon">📡</span>            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+
+                        <a href="/" class="nav-button" title="Volver al Dashboard">
+
+                            <span class="material-symbols-outlined">home</span>                        ESP-NOW Manager            -webkit-background-clip: text;
+
+                        </a>
+
+                    </div>                    </h1>            -webkit-text-fill-color: transparent;
+
+                </div>
+
+            </div>                    <p class="header-subtitle">Gestor de Red Mesh IoT</p>        }
+
+        </div>
 
                 </div>        
 
-                <div class="header-right">        .network-topology {
+        <!-- ============================================= -->
 
-                    <!-- Indicador de estado de la red -->            background: var(--card-bg);
+        <!-- ESTADÍSTICAS DE RED EN TIEMPO REAL          -->                <div class="header-right">        .network-topology {
 
-                    <div class="network-status-indicator">            border-radius: 20px;
+        <!-- ============================================= -->
 
-                        <div class="status-dot status-active" id="network-status-dot"></div>            padding: 30px;
+        <div class="network-stats-container">                    <!-- Indicador de estado de la red -->            background: var(--card-bg);
 
-                        <span class="status-text" id="network-status-text">Red Activa</span>            margin-bottom: 30px;
+            <div class="stats-grid">
 
-                    </div>            border: 1px solid var(--border-color);
+                <div class="stat-card">                    <div class="network-status-indicator">            border-radius: 20px;
 
-                    <!-- Botón de configuración rápida -->            backdrop-filter: blur(16px);
+                    <div class="stat-icon">
 
-                    <button class="btn-icon" onclick="toggleTheme()" title="Cambiar tema">        }
+                        <span class="material-symbols-outlined">devices</span>                        <div class="status-dot status-active" id="network-status-dot"></div>            padding: 30px;
 
-                        <span class="material-symbols-outlined">dark_mode</span>        
+                    </div>
 
-                    </button>        .topology-visual {
+                    <div class="stat-content">                        <span class="status-text" id="network-status-text">Red Activa</span>            margin-bottom: 30px;
 
-                </div>            display: flex;
+                        <h3 class="stat-value" id="connected-count">0</h3>
 
-            </div>            justify-content: center;
+                        <p class="stat-label">Dispositivos Conectados</p>                    </div>            border: 1px solid var(--border-color);
 
-        </header>            align-items: center;
+                    </div>
 
-            flex-wrap: wrap;
+                </div>                    <!-- Botón de configuración rápida -->            backdrop-filter: blur(16px);
 
-        <!-- =========================================== -->            gap: 40px;
+                
 
-        <!-- ESTADÍSTICAS DE RED PRINCIPALES          -->            margin: 30px 0;
+                <div class="stat-card">                    <button class="btn-icon" onclick="toggleTheme()" title="Cambiar tema">        }
 
-        <!-- =========================================== -->            min-height: 300px;
+                    <div class="stat-icon">
 
-        <section class="stats-section">        }
+                        <span class="material-symbols-outlined">speed</span>                        <span class="material-symbols-outlined">dark_mode</span>        
 
-            <div class="stats-grid">        
+                    </div>
 
-                <!-- Estadística: Estado de Red -->        .master-node, .slave-node {
+                    <div class="stat-content">                    </button>        .topology-visual {
 
-                <div class="stat-card">            position: relative;
+                        <h3 class="stat-value" id="data-rate">0 kbps</h3>
 
-                    <div class="stat-icon">🌐</div>            background: var(--card-bg);
+                        <p class="stat-label">Velocidad de Datos</p>                </div>            display: flex;
 
-                    <div class="stat-content">            border-radius: 16px;
+                    </div>
 
-                        <div class="stat-value" id="network-status">Activo</div>            padding: 20px;
+                </div>            </div>            justify-content: center;
 
-                        <div class="stat-label">Estado de Red</div>            text-align: center;
+                
 
-                    </div>            border: 2px solid var(--border-color);
+                <div class="stat-card">        </header>            align-items: center;
 
-                </div>            backdrop-filter: blur(8px);
+                    <div class="stat-icon">
 
-                            transition: all 0.3s ease;
+                        <span class="material-symbols-outlined">signal_wifi_4_bar</span>            flex-wrap: wrap;
 
-                <!-- Estadística: Dispositivos Conectados -->            min-width: 180px;
+                    </div>
 
-                <div class="stat-card">        }
+                    <div class="stat-content">        <!-- =========================================== -->            gap: 40px;
 
-                    <div class="stat-icon">📱</div>        
+                        <h3 class="stat-value" id="signal-strength">-30 dBm</h3>
 
-                    <div class="stat-content">        .master-node {
+                        <p class="stat-label">Intensidad de Señal</p>        <!-- ESTADÍSTICAS DE RED PRINCIPALES          -->            margin: 30px 0;
 
-                        <div class="stat-value" id="connected-count">0</div>            border-color: var(--success-color);
+                    </div>
 
-                        <div class="stat-label">Dispositivos</div>            background: rgba(76, 175, 80, 0.1);
+                </div>        <!-- =========================================== -->            min-height: 300px;
 
-                    </div>        }
+                
 
-                </div>        
+                <div class="stat-card">        <section class="stats-section">        }
 
-                        .slave-node {
+                    <div class="stat-icon">
 
-                <!-- Estadística: Tasa de Datos -->            border-color: var(--primary-color);
+                        <span class="material-symbols-outlined">network_check</span>            <div class="stats-grid">        
 
-                <div class="stat-card">            background: rgba(33, 150, 243, 0.1);
+                    </div>
 
-                    <div class="stat-icon">📊</div>        }
+                    <div class="stat-content">                <!-- Estadística: Estado de Red -->        .master-node, .slave-node {
 
-                    <div class="stat-content">        
+                        <h3 class="stat-value" id="network-health">100%</h3>
 
-                        <div class="stat-value" id="data-rate">0</div>        .node-icon {
+                        <p class="stat-label">Salud de Red</p>                <div class="stat-card">            position: relative;
 
-                        <div class="stat-label">KB/s Transferidos</div>            font-size: 3rem;
+                    </div>
 
-                    </div>            margin-bottom: 10px;
+                </div>                    <div class="stat-icon">🌐</div>            background: var(--card-bg);
 
-                </div>            display: block;
+            </div>
 
-                        }
+        </div>                    <div class="stat-content">            border-radius: 16px;
 
-                <!-- Estadística: Intensidad de Señal -->        
 
-                <div class="stat-card">        .node-name {
 
-                    <div class="stat-icon">📶</div>            font-weight: 600;
+        <!-- ============================================= -->                        <div class="stat-value" id="network-status">Activo</div>            padding: 20px;
 
-                    <div class="stat-content">            margin-bottom: 5px;
+        <!-- TOPOLOGÍA DE RED VISUAL                     -->
 
-                        <div class="stat-value" id="signal-strength">-30</div>        }
+        <!-- ============================================= -->                        <div class="stat-label">Estado de Red</div>            text-align: center;
 
-                        <div class="stat-label">dBm Señal</div>        
+        <div class="network-topology-container">
 
-                    </div>        .node-details {
+            <div class="section-header">                    </div>            border: 2px solid var(--border-color);
 
-                </div>            font-size: 0.8rem;
+                <h2 class="section-title">
 
-            </div>            color: var(--text-secondary);
+                    <span class="material-symbols-outlined">account_tree</span>                </div>            backdrop-filter: blur(8px);
 
-        </section>            line-height: 1.4;
+                    Topología de Red
 
-        }
+                </h2>                            transition: all 0.3s ease;
 
-        <!-- =========================================== -->        
+                <div class="section-controls">
 
-        <!-- VISUALIZACIÓN DE TOPOLOGÍA DE RED        -->        .connection-line {
+                    <button class="control-button" id="refresh-topology" title="Actualizar Topología">                <!-- Estadística: Dispositivos Conectados -->            min-width: 180px;
 
-        <!-- =========================================== -->            position: absolute;
+                        <span class="material-symbols-outlined">refresh</span>
 
-        <section class="topology-section">            height: 2px;
+                    </button>                <div class="stat-card">        }
 
-            <div class="section-header">            background: linear-gradient(90deg, var(--success-color), var(--primary-color));
+                    <button class="control-button" id="auto-layout" title="Organización Automática">
 
-                <h2 class="section-title">            top: 50%;
+                        <span class="material-symbols-outlined">auto_fix_high</span>                    <div class="stat-icon">📱</div>        
 
-                    <span class="material-symbols-outlined">hub</span>            z-index: -1;
+                    </button>
 
-                    Topología de Red        }
+                </div>                    <div class="stat-content">        .master-node {
 
-                </h2>        
+            </div>
 
-                <div class="section-actions">        .stats-grid {
+                                    <div class="stat-value" id="connected-count">0</div>            border-color: var(--success-color);
 
-                    <button class="btn btn-secondary" onclick="refreshTopology()">            display: grid;
+            <div class="topology-canvas" id="topology-canvas">
 
-                        <span class="material-symbols-outlined">refresh</span>            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+                <!-- La topología se renderiza dinámicamente aquí -->                        <div class="stat-label">Dispositivos</div>            background: rgba(76, 175, 80, 0.1);
 
-                        Actualizar            gap: 20px;
+                <div class="topology-placeholder">
 
-                    </button>            margin-bottom: 30px;
+                    <span class="material-symbols-outlined">hub</span>                    </div>        }
 
-                    <button class="btn btn-primary" onclick="showNetworkMap()">        }
+                    <p>Cargando topología de red...</p>
 
-                        <span class="material-symbols-outlined">map</span>        
+                </div>                </div>        
 
-                        Vista Detallada        .stat-card {
+            </div>
 
-                    </button>            background: var(--card-bg);
+        </div>                        .slave-node {
 
-                </div>            border-radius: 16px;
 
-            </div>            padding: 25px;
 
-                        text-align: center;
+        <!-- ============================================= -->                <!-- Estadística: Tasa de Datos -->            border-color: var(--primary-color);
 
-            <!-- Canvas de visualización de red -->            border: 1px solid var(--border-color);
+        <!-- GESTIÓN DE DISPOSITIVOS                     -->
 
-            <div class="topology-canvas" id="network-topology">            backdrop-filter: blur(16px);
+        <!-- ============================================= -->                <div class="stat-card">            background: rgba(33, 150, 243, 0.1);
 
-                <!-- La topología se renderiza dinámicamente aquí -->            transition: transform 0.3s ease;
+        <div class="device-management-container">
 
-            </div>        }
+            <div class="management-grid">                    <div class="stat-icon">📊</div>        }
 
-        </section>        
+                
 
-        .stat-card:hover {
+                <!-- Panel de Dispositivos Conectados -->                    <div class="stat-content">        
 
-        <!-- =========================================== -->            transform: translateY(-5px);
+                <div class="device-panel">
 
-        <!-- GESTIÓN DE DISPOSITIVOS                  -->        }
+                    <div class="panel-header">                        <div class="stat-value" id="data-rate">0</div>        .node-icon {
 
-        <!-- =========================================== -->        
+                        <h3 class="panel-title">
 
-        <section class="devices-section">        .stat-icon {
+                            <span class="material-symbols-outlined">devices</span>                        <div class="stat-label">KB/s Transferidos</div>            font-size: 3rem;
 
-            <div class="devices-grid">            font-size: 2.5rem;
+                            Dispositivos Conectados
 
-                <!-- ================================== -->            margin-bottom: 15px;
+                        </h3>                    </div>            margin-bottom: 10px;
 
-                <!-- PANEL: DISPOSITIVOS CONECTADOS   -->            display: block;
+                        <div class="panel-controls">
 
-                <!-- ================================== -->        }
+                            <button class="control-button" id="scan-devices" title="Escanear Dispositivos">                </div>            display: block;
 
-                <div class="device-panel">        
+                                <span class="material-symbols-outlined">radar</span>
 
-                    <div class="panel-header">        .stat-value {
+                            </button>                        }
 
-                        <h3 class="panel-title">            font-size: 2rem;
+                        </div>
 
-                            <span class="material-symbols-outlined">devices</span>            font-weight: 700;
+                    </div>                <!-- Estadística: Intensidad de Señal -->        
 
-                            Dispositivos Conectados            margin-bottom: 5px;
+                    <div class="device-list" id="connected-devices-list">
 
-                        </h3>        }
+                        <!-- Se llenará dinámicamente -->                <div class="stat-card">        .node-name {
+
+                        <div class="device-placeholder">
+
+                            <span class="material-symbols-outlined">search</span>                    <div class="stat-icon">📶</div>            font-weight: 600;
+
+                            <p>Escaneando dispositivos...</p>
+
+                        </div>                    <div class="stat-content">            margin-bottom: 5px;
+
+                    </div>
+
+                </div>                        <div class="stat-value" id="signal-strength">-30</div>        }
+
+                
+
+                <!-- Panel de Dispositivos Disponibles -->                        <div class="stat-label">dBm Señal</div>        
+
+                <div class="device-panel">
+
+                    <div class="panel-header">                    </div>        .node-details {
+
+                        <h3 class="panel-title">
+
+                            <span class="material-symbols-outlined">radar</span>                </div>            font-size: 0.8rem;
+
+                            Dispositivos Disponibles
+
+                        </h3>            </div>            color: var(--text-secondary);
+
+                        <div class="panel-controls">
+
+                            <button class="control-button" id="add-device" title="Agregar Dispositivo Manualmente">        </section>            line-height: 1.4;
+
+                                <span class="material-symbols-outlined">add</span>
+
+                            </button>        }
+
+                        </div>
+
+                    </div>        <!-- =========================================== -->        
+
+                    <div class="device-list" id="available-devices-list">
+
+                        <!-- Se llenará dinámicamente -->        <!-- VISUALIZACIÓN DE TOPOLOGÍA DE RED        -->        .connection-line {
+
+                        <div class="device-placeholder">
+
+                            <span class="material-symbols-outlined">wifi_find</span>        <!-- =========================================== -->            position: absolute;
+
+                            <p>Buscando dispositivos disponibles...</p>
+
+                        </div>        <section class="topology-section">            height: 2px;
+
+                    </div>
+
+                </div>            <div class="section-header">            background: linear-gradient(90deg, var(--success-color), var(--primary-color));
+
+            </div>
+
+        </div>                <h2 class="section-title">            top: 50%;
+
+
+
+        <!-- ============================================= -->                    <span class="material-symbols-outlined">hub</span>            z-index: -1;
+
+        <!-- PANEL DE CONTROL AVANZADO                   -->
+
+        <!-- ============================================= -->                    Topología de Red        }
+
+        <div class="advanced-controls-container">
+
+            <div class="section-header">                </h2>        
+
+                <h2 class="section-title">
+
+                    <span class="material-symbols-outlined">settings</span>                <div class="section-actions">        .stats-grid {
+
+                    Controles Avanzados
+
+                </h2>                    <button class="btn btn-secondary" onclick="refreshTopology()">            display: grid;
+
+            </div>
+
+                                    <span class="material-symbols-outlined">refresh</span>            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+
+            <div class="controls-grid">
+
+                <div class="control-group">                        Actualizar            gap: 20px;
+
+                    <h4 class="control-group-title">Configuración de Red</h4>
+
+                    <div class="control-items">                    </button>            margin-bottom: 30px;
+
+                        <button class="action-button primary" id="network-config">
+
+                            <span class="material-symbols-outlined">router</span>                    <button class="btn btn-primary" onclick="showNetworkMap()">        }
+
+                            Configurar Red
+
+                        </button>                        <span class="material-symbols-outlined">map</span>        
+
+                        <button class="action-button secondary" id="channel-config">
+
+                            <span class="material-symbols-outlined">tune</span>                        Vista Detallada        .stat-card {
+
+                            Canal WiFi
+
+                        </button>                    </button>            background: var(--card-bg);
+
+                    </div>
+
+                </div>                </div>            border-radius: 16px;
+
+                
+
+                <div class="control-group">            </div>            padding: 25px;
+
+                    <h4 class="control-group-title">Mantenimiento</h4>
+
+                    <div class="control-items">                        text-align: center;
+
+                        <button class="action-button warning" id="reset-network">
+
+                            <span class="material-symbols-outlined">restart_alt</span>            <!-- Canvas de visualización de red -->            border: 1px solid var(--border-color);
+
+                            Reiniciar Red
+
+                        </button>            <div class="topology-canvas" id="network-topology">            backdrop-filter: blur(16px);
+
+                        <button class="action-button danger" id="factory-reset">
+
+                            <span class="material-symbols-outlined">factory_reset</span>                <!-- La topología se renderiza dinámicamente aquí -->            transition: transform 0.3s ease;
+
+                            Reset de Fábrica
+
+                        </button>            </div>        }
+
+                    </div>
+
+                </div>        </section>        
+
+            </div>
+
+        </div>        .stat-card:hover {
+
+
+
+        <!-- ============================================= -->        <!-- =========================================== -->            transform: translateY(-5px);
+
+        <!-- LOG DE ACTIVIDAD EN TIEMPO REAL             -->
+
+        <!-- ============================================= -->        <!-- GESTIÓN DE DISPOSITIVOS                  -->        }
+
+        <div class="activity-log-container">
+
+            <div class="section-header">        <!-- =========================================== -->        
+
+                <h2 class="section-title">
+
+                    <span class="material-symbols-outlined">history</span>        <section class="devices-section">        .stat-icon {
+
+                    Log de Actividad
+
+                </h2>            <div class="devices-grid">            font-size: 2.5rem;
+
+                <div class="section-controls">
+
+                    <button class="control-button" id="clear-log" title="Limpiar Log">                <!-- ================================== -->            margin-bottom: 15px;
+
+                        <span class="material-symbols-outlined">clear_all</span>
+
+                    </button>                <!-- PANEL: DISPOSITIVOS CONECTADOS   -->            display: block;
+
+                    <button class="control-button" id="export-log" title="Exportar Log">
+
+                        <span class="material-symbols-outlined">download</span>                <!-- ================================== -->        }
+
+                    </button>
+
+                </div>                <div class="device-panel">        
+
+            </div>
+
+                                <div class="panel-header">        .stat-value {
+
+            <div class="activity-log" id="activity-log">
+
+                <div class="log-entry info">                        <h3 class="panel-title">            font-size: 2rem;
+
+                    <span class="log-timestamp">12:34:56</span>
+
+                    <span class="log-level">INFO</span>                            <span class="material-symbols-outlined">devices</span>            font-weight: 700;
+
+                    <span class="log-message">Sistema ESP-NOW iniciado correctamente</span>
+
+                </div>                            Dispositivos Conectados            margin-bottom: 5px;
+
+                <!-- Más entradas de log se agregarán dinámicamente -->
+
+            </div>                        </h3>        }
+
+        </div>
 
                         <div class="panel-badge" id="connected-badge">0</div>        
 
+    </div>
+
                     </div>        .stat-label {
 
-                                color: var(--text-secondary);
+    <!-- =============================================== -->
 
-                    <!-- Lista de dispositivos conectados -->            font-size: 0.9rem;
+    <!-- MODALES Y OVERLAYS                           -->                                color: var(--text-secondary);
 
-                    <div class="device-list" id="connected-devices">        }
+    <!-- =============================================== -->
 
-                        <!-- Se popula dinámicamente -->        
+                        <!-- Lista de dispositivos conectados -->            font-size: 0.9rem;
 
-                    </div>        .devices-panel {
+    <!-- Modal de Configuración de Dispositivo -->
 
-                </div>            display: grid;
+    <div class="modal-overlay" id="device-config-modal">                    <div class="device-list" id="connected-devices">        }
 
-            grid-template-columns: 1fr 1fr;
+        <div class="modal-content">
 
-                <!-- ================================== -->            gap: 30px;
+            <div class="modal-header">                        <!-- Se popula dinámicamente -->        
 
-                <!-- PANEL: DISPOSITIVOS DISPONIBLES  -->            margin-bottom: 30px;
+                <h3 class="modal-title">Configurar Dispositivo</h3>
 
-                <!-- ================================== -->        }
+                <button class="modal-close" id="close-device-modal">                    </div>        .devices-panel {
 
-                <div class="device-panel">        
+                    <span class="material-symbols-outlined">close</span>
 
-                    <div class="panel-header">        .device-section {
+                </button>                </div>            display: grid;
 
-                        <h3 class="panel-title">            background: var(--card-bg);
+            </div>
 
-                            <span class="material-symbols-outlined">wifi_find</span>            border-radius: 20px;
+            <div class="modal-body">            grid-template-columns: 1fr 1fr;
 
-                            Dispositivos Disponibles            padding: 25px;
+                <form id="device-config-form">
 
-                        </h3>            border: 1px solid var(--border-color);
+                    <div class="form-group">                <!-- ================================== -->            gap: 30px;
 
-                        <button class="btn btn-sm btn-primary" onclick="scanForDevices()">            backdrop-filter: blur(16px);
+                        <label for="device-name">Nombre del Dispositivo:</label>
 
-                            <span class="material-symbols-outlined">search</span>        }
+                        <input type="text" id="device-name" name="device-name" required>                <!-- PANEL: DISPOSITIVOS DISPONIBLES  -->            margin-bottom: 30px;
 
-                            Buscar        
+                    </div>
+
+                    <div class="form-group">                <!-- ================================== -->        }
+
+                        <label for="device-mac">Dirección MAC:</label>
+
+                        <input type="text" id="device-mac" name="device-mac" pattern="^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$" required>                <div class="device-panel">        
+
+                    </div>
+
+                    <div class="form-group">                    <div class="panel-header">        .device-section {
+
+                        <label for="device-role">Rol del Dispositivo:</label>
+
+                        <select id="device-role" name="device-role">                        <h3 class="panel-title">            background: var(--card-bg);
+
+                            <option value="sensor">Sensor</option>
+
+                            <option value="controller">Controlador</option>                            <span class="material-symbols-outlined">wifi_find</span>            border-radius: 20px;
+
+                            <option value="repeater">Repetidor</option>
+
+                        </select>                            Dispositivos Disponibles            padding: 25px;
+
+                    </div>
+
+                </form>                        </h3>            border: 1px solid var(--border-color);
+
+            </div>
+
+            <div class="modal-footer">                        <button class="btn btn-sm btn-primary" onclick="scanForDevices()">            backdrop-filter: blur(16px);
+
+                <button type="button" class="button secondary" id="cancel-device-config">Cancelar</button>
+
+                <button type="submit" class="button primary" id="save-device-config">Guardar</button>                            <span class="material-symbols-outlined">search</span>        }
+
+            </div>
+
+        </div>                            Buscar        
+
+    </div>
 
                         </button>        .device-list {
 
-                    </div>            max-height: 400px;
+    <!-- =============================================== -->
 
-                                overflow-y: auto;
+    <!-- SCRIPTS JAVASCRIPT                           -->                    </div>            max-height: 400px;
 
-                    <!-- Lista de dispositivos disponibles -->            margin-top: 20px;
+    <!-- =============================================== -->
 
+    <script src="/web/esp_now/esp-now-manager.js"></script>                                overflow-y: auto;
+
+
+
+</body>                    <!-- Lista de dispositivos disponibles -->            margin-top: 20px;
+
+</html>
                     <div class="device-list" id="available-devices">        }
 
                         <!-- Se popula dinámicamente -->        

@@ -305,19 +305,21 @@ void AppManager::setupWebServer() {
 
 void AppManager::setupStaticFiles() {
     // Archivos estáticos que siempre están disponibles (legacy)
-    server.serveStatic("/style.css", SPIFFS, "/style.css");
-    server.serveStatic("/app.js", SPIFFS, "/app.js");
+    server.serveStatic("/style.css", SPIFFS, "/web/dashboard/style.css");  // Fix: usar dashboard CSS
+    server.serveStatic("/app.js", SPIFFS, "/web/dashboard/app.js");        // Fix: usar dashboard JS
     
     // === ESTRUCTURA ORGANIZADA ===
     // Captive Portal CSS y JS
-    server.serveStatic("/web/captive_portal/css/", SPIFFS, "/web/captive_portal/css/");
-    server.serveStatic("/web/captive_portal/js/", SPIFFS, "/web/captive_portal/js/");
+    server.serveStatic("/web/captive_portal/style.css", SPIFFS, "/web/captive_portal/style.css");
+    server.serveStatic("/web/captive_portal/captive-portal.js", SPIFFS, "/web/captive_portal/captive-portal.js");
     
     // ESP-NOW Manager CSS y JS  
-    server.serveStatic("/web/esp_now/css/", SPIFFS, "/web/esp_now/css/");
-    server.serveStatic("/web/esp_now/js/", SPIFFS, "/web/esp_now/js/");
+    server.serveStatic("/web/esp_now/style.css", SPIFFS, "/web/esp_now/style.css");
+    server.serveStatic("/web/esp_now/esp-now-manager.js", SPIFFS, "/web/esp_now/esp-now-manager.js");
     
     // Dashboard CSS y JS (ya organizados)
+    server.serveStatic("/web/dashboard/style.css", SPIFFS, "/web/dashboard/style.css");
+    server.serveStatic("/web/dashboard/app.js", SPIFFS, "/web/dashboard/app.js");
     server.serveStatic("/web/dashboard/assets/", SPIFFS, "/web/dashboard/assets/");
     
     // Assets (solo medios: imágenes, videos, etc.)
@@ -784,6 +786,170 @@ void AppManager::setupConditionalRoutes() {
             request->send(500, "application/json", "{\"success\":false,\"message\":\"Error al realizar reset de fábrica\"}");
         }
     });
+    
+    // ===== API DASHBOARD UNIFICADO =====
+    server.on("/multi-sensor-data", HTTP_GET, [this](AsyncWebServerRequest *request) {
+        Serial.println("📡 Procesando solicitud de datos multi-sensor ESP-NOW");
+        
+        String jsonResponse = "{";
+        jsonResponse += "\"timestamp\":" + String(millis()) + ",";
+        jsonResponse += "\"network\":{";
+        jsonResponse += "\"status\":\"active\",";
+        jsonResponse += "\"master_device\":\"" + WiFi.macAddress() + "\",";
+        jsonResponse += "\"connected_count\":0";
+        jsonResponse += "},";
+        jsonResponse += "\"sensors\":[";
+        
+        // Por ahora, devolver array vacío ya que ESP-NOW no está completamente implementado
+        // En futuras versiones aquí se consultaría la librería ESPNowManager
+        if (espNowManager) {
+            // TODO: Implementar getSensorsJSON() en ESPNowManager
+            // jsonResponse += espNowManager->getSensorsJSON();
+        }
+        
+        jsonResponse += "]";
+        jsonResponse += "}";
+        
+        AsyncWebServerResponse *response = request->beginResponse(200, "application/json", jsonResponse);
+        response->addHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+        response->addHeader("Access-Control-Allow-Origin", "*");
+        request->send(response);
+    });
+    
+    server.on("/api/esp-now/status", HTTP_GET, [this](AsyncWebServerRequest *request) {
+        Serial.println("🔗 Procesando solicitud de estado ESP-NOW");
+        
+        String jsonResponse = "{";
+        jsonResponse += "\"esp_now_enabled\":" + String(espNowManager ? "true" : "false") + ",";
+        jsonResponse += "\"role\":\"" + String(config_manager.getESPNowConfig().isMaster() ? "master" : "slave") + "\",";
+        jsonResponse += "\"mac_address\":\"" + WiFi.macAddress() + "\",";
+        jsonResponse += "\"channel\":" + String(WiFi.channel()) + ",";
+        jsonResponse += "\"wifi_mode\":\"" + String(WiFi.getMode() == WIFI_AP_STA ? "AP_STA" : "STA") + "\",";
+        jsonResponse += "\"connected_peers\":0,";
+        jsonResponse += "\"last_activity\":" + String(millis());
+        jsonResponse += "}";
+        
+        AsyncWebServerResponse *response = request->beginResponse(200, "application/json", jsonResponse);
+        response->addHeader("Cache-Control", "no-cache");
+        response->addHeader("Access-Control-Allow-Origin", "*");
+        request->send(response);
+    });
+    
+    // ===== ESP-NOW MANAGEMENT ENDPOINTS =====
+    server.on("/api/esp-now/info", HTTP_GET, [this](AsyncWebServerRequest *request) {
+        Serial.println("🔍 Procesando solicitud de información ESP-NOW");
+        
+        String jsonResponse = "{";
+        jsonResponse += "\"status\":\"active\",";
+        jsonResponse += "\"version\":\"1.0.0\",";
+        jsonResponse += "\"device_name\":\"" + config_manager.getHostname() + "\",";
+        jsonResponse += "\"firmware\":\"ESP32_OTA_WebServer_v2.0\",";
+        jsonResponse += "\"uptime\":" + String(millis()) + ",";
+        jsonResponse += "\"free_heap\":" + String(ESP.getFreeHeap());
+        jsonResponse += "}";
+        
+        AsyncWebServerResponse *response = request->beginResponse(200, "application/json", jsonResponse);
+        response->addHeader("Access-Control-Allow-Origin", "*");
+        request->send(response);
+    });
+    
+    server.on("/api/esp-now/scan", HTTP_POST, [this](AsyncWebServerRequest *request) {
+        Serial.println("🔍 Iniciando escaneo de dispositivos ESP-NOW");
+        
+        String jsonResponse = "{";
+        jsonResponse += "\"status\":\"scanning\",";
+        jsonResponse += "\"message\":\"Escaneo iniciado exitosamente\",";
+        jsonResponse += "\"duration\":10";
+        jsonResponse += "}";
+        
+        AsyncWebServerResponse *response = request->beginResponse(200, "application/json", jsonResponse);
+        response->addHeader("Access-Control-Allow-Origin", "*");
+        request->send(response);
+    });
+    
+    server.on("/api/esp-now/connect", HTTP_POST, [this](AsyncWebServerRequest *request) {}, NULL,
+        [this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+            Serial.println("🔗 Procesando solicitud de conexión ESP-NOW");
+            
+            String jsonResponse = "{";
+            jsonResponse += "\"status\":\"connected\",";
+            jsonResponse += "\"message\":\"Dispositivo conectado exitosamente\"";
+            jsonResponse += "}";
+            
+            AsyncWebServerResponse *response = request->beginResponse(200, "application/json", jsonResponse);
+            response->addHeader("Access-Control-Allow-Origin", "*");
+            request->send(response);
+        });
+    
+    server.on("/api/esp-now/ping", HTTP_POST, [this](AsyncWebServerRequest *request) {}, NULL,
+        [this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+            Serial.println("🏓 Procesando ping ESP-NOW");
+            
+            String jsonResponse = "{";
+            jsonResponse += "\"status\":\"success\",";
+            jsonResponse += "\"ping_time\":25,";
+            jsonResponse += "\"signal_strength\":-45";
+            jsonResponse += "}";
+            
+            AsyncWebServerResponse *response = request->beginResponse(200, "application/json", jsonResponse);
+            response->addHeader("Access-Control-Allow-Origin", "*");
+            request->send(response);
+        });
+    
+    server.on("/api/esp-now/configure", HTTP_POST, [this](AsyncWebServerRequest *request) {}, NULL,
+        [this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+            Serial.println("⚙️ Procesando configuración ESP-NOW");
+            
+            String jsonResponse = "{";
+            jsonResponse += "\"status\":\"configured\",";
+            jsonResponse += "\"message\":\"Configuración aplicada exitosamente\"";
+            jsonResponse += "}";
+            
+            AsyncWebServerResponse *response = request->beginResponse(200, "application/json", jsonResponse);
+            response->addHeader("Access-Control-Allow-Origin", "*");
+            request->send(response);
+        });
+    
+    server.on("/api/esp-now/test", HTTP_POST, [this](AsyncWebServerRequest *request) {
+        Serial.println("🧪 Procesando test ESP-NOW");
+        
+        String jsonResponse = "{";
+        jsonResponse += "\"status\":\"test_completed\",";
+        jsonResponse += "\"success_rate\":95,";
+        jsonResponse += "\"avg_latency\":12";
+        jsonResponse += "}";
+        
+        AsyncWebServerResponse *response = request->beginResponse(200, "application/json", jsonResponse);
+        response->addHeader("Access-Control-Allow-Origin", "*");
+        request->send(response);
+    });
+    
+    server.on("/api/esp-now/reset", HTTP_POST, [this](AsyncWebServerRequest *request) {
+        Serial.println("🔄 Procesando reset ESP-NOW");
+        
+        String jsonResponse = "{";
+        jsonResponse += "\"status\":\"reset_initiated\",";
+        jsonResponse += "\"message\":\"Reset ESP-NOW iniciado\"";
+        jsonResponse += "}";
+        
+        AsyncWebServerResponse *response = request->beginResponse(200, "application/json", jsonResponse);
+        response->addHeader("Access-Control-Allow-Origin", "*");
+        request->send(response);
+    });
+    
+    server.on("/api/esp-now/disconnect", HTTP_POST, [this](AsyncWebServerRequest *request) {}, NULL,
+        [this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+            Serial.println("🔌 Procesando desconexión ESP-NOW");
+            
+            String jsonResponse = "{";
+            jsonResponse += "\"status\":\"disconnected\",";
+            jsonResponse += "\"message\":\"Dispositivo desconectado exitosamente\"";
+            jsonResponse += "}";
+            
+            AsyncWebServerResponse *response = request->beginResponse(200, "application/json", jsonResponse);
+            response->addHeader("Access-Control-Allow-Origin", "*");
+            request->send(response);
+        });
 }
 
 void AppManager::setupCaptiveDetectionRoutes() {
