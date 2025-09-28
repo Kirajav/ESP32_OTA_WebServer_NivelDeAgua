@@ -1,30 +1,31 @@
-#ifndef CONFIG_MANAGER_V2_H
-#define CONFIG_MANAGER_V2_H
+#ifndef APPLICATION_CONFIG_H
+#define APPLICATION_CONFIG_H
 
 #include <ArduinoJson.h>
 #include <FS.h>
 #include <SPIFFS.h>
-#include "NetworkConfig.h"
-#include "SensorConfig.h"
-#include "HardwareBoardConfig.h"
-#include "ESPNowConfig.h"
+#include "Domain/NetworkConfig.h"
+#include "Domain/SensorConfig.h"
+#include "Domain/HardwareBoardConfig.h"
+#include "Domain/ESPNowConfig.h"
 
 /**
- * Refactored ConfigManager - Domain-driven architecture
+ * Application Configuration Manager - Domain-driven architecture
  * 
- * This class acts as a facade that coordinates three specialized 
+ * This class acts as a facade that coordinates specialized 
  * configuration domains:
  * - NetworkConfig: Network-related settings (WiFi, hostname, etc.)
  * - SensorConfig: Sensor-related settings (measurements, calibration)
  * - HardwareBoardConfig: Heltec board hardware settings (display, debugging, etc.)
+ * - ESPNowConfig: ESP-NOW mesh network configuration
  * 
  * Benefits:
  * - Single Responsibility Principle: Each domain handles its own concerns
  * - Better testability and maintainability
- * - Cleaner code organization
- * - English naming conventions with Spanish backward compatibility
+ * - Clean separation of concerns
+ * - Professional naming conventions
  */
-class ConfigManagerV2 {
+class ApplicationConfig {
 private:
     NetworkConfig network_config;
     SensorConfig sensor_config;
@@ -39,7 +40,7 @@ private:
     bool saveToFile();
     
 public:
-    ConfigManagerV2();
+    ApplicationConfig();
     
     // Initialization
     bool begin();
@@ -125,4 +126,4 @@ public:
     bool importFromJson(const String& json_string);
 };
 
-#endif // CONFIG_MANAGER_V2_H
+#endif // APPLICATION_CONFIG_H

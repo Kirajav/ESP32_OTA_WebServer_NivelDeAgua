@@ -3,11 +3,11 @@
 
 #include "Sensor.h"
 #include <HCSR04.h>
-#include <ConfigManagerV2.h>
+#include "../Config/ApplicationConfig.h"
 
 class WaterLevelSensor : public Sensor {
 public:
-    WaterLevelSensor(uint8_t triggerPin, uint8_t echoPin, ConfigManagerV2* configManager);
+    WaterLevelSensor(uint8_t triggerPin, uint8_t echoPin, ApplicationConfig* configManager);
 
     // Sensor interface implementation
     bool begin() override;
@@ -24,7 +24,7 @@ public:
 
 private:
     UltraSonicDistanceSensor m_distanceSensor;
-    ConfigManagerV2* m_configManager;
+    ApplicationConfig* m_configManager;
     float m_distanciaCm;
     String m_mensajeError;
 

@@ -6,7 +6,7 @@
 #include <WebSerial.h>
 #include <ArduinoJson.h>
 #include "SensorManager.h"
-#include "ConfigManagerV2.h"
+#include "../Config/ApplicationConfig.h"
 #include "DisplayManager.h"
 #include "HardwareBoardStatus.h"
 #include "ESPNowManager.h"

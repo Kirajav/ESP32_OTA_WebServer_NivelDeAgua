@@ -1,8 +1,8 @@
 #include "HardwareBoardStatus.h"
 #include "../DisplayManager/DisplayManager.h"
-#include "../ConfigManager/ConfigManagerV2.h"
+#include "../Config/ApplicationConfig.h"
 
-HardwareBoardStatus::HardwareBoardStatus(DisplayManager* displayManager, ConfigManagerV2* configManager) : 
+HardwareBoardStatus::HardwareBoardStatus(DisplayManager* displayManager, ApplicationConfig* configManager) : 
 _displayManager(displayManager), _configManager(configManager) {
 }
 

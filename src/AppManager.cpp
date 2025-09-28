@@ -329,18 +329,18 @@ void AppManager::setupSmartRoutes() {
         if (portal_active) {
             // MODO PORTAL CAUTIVO
             Serial.println("🌐 Sirviendo portal cautivo");
-            if (SPIFFS.exists("/captive_portal.html")) {
-                request->send(SPIFFS, "/captive_portal.html", "text/html");
+            if (SPIFFS.exists("/web/captive_portal/index.html")) {
+                request->send(SPIFFS, "/web/captive_portal/index.html", "text/html");
             } else {
                 request->send(500, "text/plain", "❌ Error: Portal cautivo no encontrado");
             }
         } else {
             // MODO SENSOR NORMAL
             Serial.println("🌊 Sirviendo dashboard del sensor");
-            if (SPIFFS.exists("/index.html")) {
-                request->send(SPIFFS, "/index.html", "text/html");
+            if (SPIFFS.exists("/web/dashboard/index.html")) {
+                request->send(SPIFFS, "/web/dashboard/index.html", "text/html");
             } else {
-                request->send(500, "text/plain", "❌ Error: index.html no encontrado");
+                request->send(500, "text/plain", "❌ Error: dashboard/index.html no encontrado");
             }
         }
     });

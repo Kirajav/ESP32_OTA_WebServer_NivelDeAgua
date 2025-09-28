@@ -1,12 +1,12 @@
-#include "ConfigManagerV2.h"
+#include "ApplicationConfig.h"
 
-const char* ConfigManagerV2::CONFIG_FILE = "/config.json";
+const char* ApplicationConfig::CONFIG_FILE = "/config.json";
 
-ConfigManagerV2::ConfigManagerV2() {
+ApplicationConfig::ApplicationConfig() {
     // Domain objects are initialized with their defaults
 }
 
-bool ConfigManagerV2::begin() {
+bool ApplicationConfig::begin() {
     if (!mountSPIFFS()) {
         return false;
     }
@@ -20,7 +20,7 @@ bool ConfigManagerV2::begin() {
     return true;
 }
 
-bool ConfigManagerV2::mountSPIFFS() {
+bool ApplicationConfig::mountSPIFFS() {
     if (!SPIFFS.begin(true)) {
         Serial.println("Error: Failed to mount SPIFFS");
         return false;
@@ -28,7 +28,7 @@ bool ConfigManagerV2::mountSPIFFS() {
     return true;
 }
 
-bool ConfigManagerV2::loadFromFile() {
+bool ApplicationConfig::loadFromFile() {
     if (!SPIFFS.exists(CONFIG_FILE)) {
         Serial.println("Config file doesn't exist, using defaults");
         return false;
@@ -91,7 +91,7 @@ bool ConfigManagerV2::loadFromFile() {
     return true;
 }
 
-bool ConfigManagerV2::saveToFile() {
+bool ApplicationConfig::saveToFile() {
     DynamicJsonDocument doc(JSON_BUFFER_SIZE);
     JsonObject root = doc.to<JsonObject>();
     
@@ -131,15 +131,15 @@ bool ConfigManagerV2::saveToFile() {
     return true;
 }
 
-bool ConfigManagerV2::save() {
+bool ApplicationConfig::save() {
     return saveToFile();
 }
 
-bool ConfigManagerV2::load() {
+bool ApplicationConfig::load() {
     return loadFromFile();
 }
 
-void ConfigManagerV2::reset() {
+void ApplicationConfig::reset() {
     network_config.setDefaults();
     sensor_config.setDefaults();
     system_config.setDefaults();
@@ -147,13 +147,13 @@ void ConfigManagerV2::reset() {
     Serial.println("Configuration reset to defaults");
 }
 
-bool ConfigManagerV2::isValid() const {
+bool ApplicationConfig::isValid() const {
     return network_config.isValid() && 
            sensor_config.isValid() && 
            system_config.isValid();
 }
 
-bool ConfigManagerV2::exportToJson(String& json_string) const {
+bool ApplicationConfig::exportToJson(String& json_string) const {
     DynamicJsonDocument doc(JSON_BUFFER_SIZE);
     JsonObject root = doc.to<JsonObject>();
     
@@ -178,7 +178,7 @@ bool ConfigManagerV2::exportToJson(String& json_string) const {
     return !json_string.isEmpty();
 }
 
-bool ConfigManagerV2::importFromJson(const String& json_string) {
+bool ApplicationConfig::importFromJson(const String& json_string) {
     DynamicJsonDocument doc(JSON_BUFFER_SIZE);
     DeserializationError error = deserializeJson(doc, json_string);
     

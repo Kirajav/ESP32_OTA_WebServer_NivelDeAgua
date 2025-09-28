@@ -1,7 +1,7 @@
 #include "WaterLevelSensor.h"
 #include <ArduinoJson.h>
 
-WaterLevelSensor::WaterLevelSensor(uint8_t triggerPin, uint8_t echoPin, ConfigManagerV2* configManager)
+WaterLevelSensor::WaterLevelSensor(uint8_t triggerPin, uint8_t echoPin, ApplicationConfig* configManager)
     : m_distanceSensor(triggerPin, echoPin), m_configManager(configManager), m_distanciaCm(-1.0), m_mensajeError("No_init") {}
 
 bool WaterLevelSensor::begin() {

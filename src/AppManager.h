@@ -11,10 +11,7 @@
 #include <ElegantOTA.h>
 #include "DisplayManager.h"
 #include "SensorManager.h"
-#include "ConfigManagerV2.h"
-#include "NetworkConfig.h"
-#include "SensorConfig.h"
-#include "HardwareBoardConfig.h"
+#include "../lib/Config/ApplicationConfig.h"
 #include "ESPNowManager.h"
 #include "GoogleHomeIntegration.h"
 #include "AlexaIntegration.h"
@@ -35,7 +32,7 @@ public:
 private:
     DisplayManager display_manager;
     SensorManager sensor_manager;
-    ConfigManagerV2 config_manager;
+    ApplicationConfig config_manager;
     bool wifi_connected;
     bool portal_active;
     bool forcePortalMode;  // Para forzar portal cautivo con doble reset

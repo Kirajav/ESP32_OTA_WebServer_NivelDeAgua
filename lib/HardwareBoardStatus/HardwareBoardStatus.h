@@ -4,11 +4,11 @@
 #include <Arduino.h>
 
 class DisplayManager;
-class ConfigManagerV2;
+class ApplicationConfig;
 
 class HardwareBoardStatus {
 public:
-    HardwareBoardStatus(DisplayManager* displayManager, ConfigManagerV2* configManager);
+    HardwareBoardStatus(DisplayManager* displayManager, ApplicationConfig* configManager);
     void begin();
     void loop();
     bool isMonitorEnabled() const;
@@ -24,7 +24,7 @@ public:
 
 private:
     DisplayManager* _displayManager;
-    ConfigManagerV2* _configManager;
+    ApplicationConfig* _configManager;
     
     bool _monitorEnabled = false;
     unsigned long _oledStartTime = 0;
