@@ -12,10 +12,10 @@
 // Estructura de datos (debe coincidir con el principal)
 struct SensorData {
     uint8_t sensorId;           
-    float waterLevel;           
-    float distance;             
-    uint8_t batteryPercent;     
-    uint32_t timestamp;         
+    float waterLevel;           // Nivel de agua en cm
+    float distance;             // Distancia del sensor en cm
+    float liters;              // Litros calculados
+    uint32_t timestamp;         // Timestamp (millis() o NTP)
     char sensorName[32];        
     uint8_t signalStrength;     
 };
@@ -77,8 +77,12 @@ void sendSensorData() {
     data.sensorId = SENSOR_ID;
     data.waterLevel = waterLevel;
     data.distance = distance;
-    data.batteryPercent = 85; // TODO: leer batería real
-    data.timestamp = millis();
+    // Calcular litros basado en dimensiones del tanque (personalizar)
+    float tankWidth = 100.0;   // Ancho del tanque en cm
+    float tankLength = 80.0;   // Largo del tanque en cm
+    data.liters = (waterLevel * tankWidth * tankLength) / 1000.0; // cm³ a litros
+    
+    data.timestamp = millis(); // Tiempo desde boot (o NTP si está sincronizado)
     strcpy(data.sensorName, "Tanque_Remoto");
     data.signalStrength = WiFi.RSSI() + 100; // Convertir a porcentaje
     
@@ -88,7 +92,8 @@ void sendSensorData() {
     Serial.println("📊 Datos enviados:");
     Serial.println("   💧 Nivel: " + String(waterLevel) + " cm");
     Serial.println("   📏 Distancia: " + String(distance) + " cm");
-    Serial.println("   🔋 Batería: " + String(data.batteryPercent) + "%");
+    Serial.println("   🪣 Litros: " + String(data.liters) + " L");
+    Serial.println("   ⏰ Timestamp: " + String(data.timestamp) + " ms");
 }
 
 void setup() {

@@ -45,6 +45,10 @@ private:
     String processor(const String& var);
     String getSensorValue(const String& sensorName, const String& key);
     String getImageForLevel();
+    
+    // Funciones para manejo de idioma
+    String getLanguageConfig();
+    bool saveLanguageConfig(const String& language);
 };
 
 #endif // WEB_MANAGER_H

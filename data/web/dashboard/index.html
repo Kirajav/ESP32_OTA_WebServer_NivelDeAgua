@@ -5,7 +5,7 @@
     <title>Smart Water Sensor Dashboard</title>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="stylesheet" type="text/css" href="/web/dashboard/style.css">
+    <link rel="stylesheet" type="text/css" href="style.css">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
@@ -56,13 +56,7 @@
                 <div class="sensor-header">
                     <div class="sensor-title">
                         <h2 id="main-sensor-title">🏠 Sensor Principal</h2>
-                        <div class="sensor-type-selector">
-                            <select id="container-type" class="modern-select">
-                                <option value="tank">🏠 Tinaco</option>
-                                <option value="container">🗂️ Contenedor</option>
-                                <option value="cistern">🏗️ Cisterna</option>
-                            </select>
-                        </div>
+
                     </div>
                     <div class="connection-status">
                         <span class="status-dot" id="sensor-status-dot"></span>
@@ -238,7 +232,7 @@
         </div>
     </div>
 
-    <script src="/web/dashboard/app.js"></script>
+    <script src="dashboard.js"></script>
 </body>
 
 </html>
