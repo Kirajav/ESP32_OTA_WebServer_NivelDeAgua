@@ -46,8 +46,18 @@ app.post('/api/esp-now/scan', (req, res) => {
 });
 
 app.get('/multi-sensor-data', (req, res) => {
-    // Simular estado sin dispositivos ESP-NOW conectados
-    res.json({ sensors: [] });
+    console.log("📡 Endpoint /multi-sensor-data llamado. Sirviendo datos mockeados de esclavo.");
+    const mockSlaveSensor = {
+        id: "SLAVE_01",
+        name: "Cisterna (Esclavo)",
+        online: true,
+        rssi: -65,
+        percentage: 45,
+        waterLevel: "2250",
+        distance: "110",
+        lastUpdate: new Date().toISOString()
+    };
+    res.json({ sensors: [mockSlaveSensor] });
 });
 
 // Otros endpoints para mantener la interactividad

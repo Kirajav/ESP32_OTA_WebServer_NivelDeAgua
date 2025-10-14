@@ -11,19 +11,42 @@ deviceCount: 0,
 lastUpdate: null
 };
 window.addEventListener("load", () => {
-console.log("🚀 Iniciando Smart Water Sensor Dashboard Unificado...");
-initContainerSVGs();
-loadAndSetContainerType();
-initWebSocket();
-initButtons();
-initAnimations();
-startPolling();
-loadDisplayStatus();
-setupMultiSensorButton();
-setupSensorConfig();
-loadESPNowSensors();
-startESPNowPolling();
-updateNetworkStatus();
+    console.log("🚀 Iniciando Smart Water Sensor Dashboard Unificado con DATOS MOCKEADOS...");
+
+    // 1. Definir datos mockeados para un tinaco al 75%
+    const mockSensorData = {
+        litros: "825",
+        distancia: "64.25", // Corresponde aprox. al 75%
+        estadoSensor: "Conectado (Mockeado)",
+        Porcentaje: "75"
+    };
+
+    // 2. Configurar el tipo de contenedor a 'tinaco'
+    containerType = 'tank';
+
+    // 3. Inicializar componentes visuales
+    initContainerSVGs();
+    renderContainerSVG();
+    initAnimations();
+
+    // 4. Actualizar la UI con los datos mockeados
+    console.log("📊 Aplicando datos mockeados...", mockSensorData);
+    updateSensorData(mockSensorData);
+    updateTankAnimation(mockSensorData);
+    updateMainSensorTitle();
+    updateConnectionStatus(true);
+    updateDisplayStatus("Encendido (Mock)");
+
+    // Se omiten initWebSocket() y startPolling() para evitar datos reales.
+    console.log("✅ Dashboard cargado con datos mockeados.");
+
+    // Inicializar botones y otras funcionalidades
+    initButtons();
+    setupMultiSensorButton();
+    setupSensorConfig();
+    espNowSensors = []; // Asegurarse de que esté vacío en el dashboard principal
+    renderESPNowSensors(); // Llamar para mostrar el mensaje "Sin sensores"
+    updateNetworkStatus();
 });
 function initWebSocket() {
 const gateway = `ws://${window.location.hostname}/ws`;
@@ -282,13 +305,62 @@ showToast("Error reiniciando WiFi", "error");
 function setupMultiSensorButton() {
 const multiSensorBtn = document.getElementById('multi-sensor-btn');
 if (multiSensorBtn) {
+// Verificar disponibilidad de datos ESP-NOW al cargar
+checkESPNowDataAvailability();
 multiSensorBtn.addEventListener('click', openMultiSensorDashboard);
 }
 }
+
+async function checkESPNowDataAvailability() {
+const multiSensorBtn = document.getElementById('multi-sensor-btn');
+if (!multiSensorBtn) return;
+
+try {
+console.log("🔍 Verificando disponibilidad de datos ESP-NOW...");
+const response = await fetch('/multi-sensor-data');
+
+if (response.ok) {
+const data = await response.json();
+
+if (data && data.slaves && Array.isArray(data.slaves) && data.slaves.length > 0) {
+console.log(`✅ Encontrados ${data.slaves.length} sensores ESP-NOW`);
+multiSensorBtn.style.opacity = '1';
+multiSensorBtn.style.pointerEvents = 'auto';
+multiSensorBtn.title = `Ver ${data.slaves.length} sensores ESP-NOW disponibles`;
+
+// Actualizar texto del botón si hay sensores
+const btnText = multiSensorBtn.querySelector('.btn-text') || 
+multiSensorBtn.childNodes[multiSensorBtn.childNodes.length - 1];
+if (btnText && btnText.textContent) {
+btnText.textContent = `Multi-Sensor (${data.slaves.length})`;
+}
+} else {
+console.log("⚠️ No hay sensores ESP-NOW disponibles");
+setMultiSensorButtonDisabled();
+}
+} else {
+console.log("⚠️ Endpoint ESP-NOW no disponible");
+setMultiSensorButtonDisabled();
+}
+} catch (error) {
+console.log("ℹ️ Datos ESP-NOW no disponibles:", error.message);
+setMultiSensorButtonDisabled();
+}
+}
+
+function setMultiSensorButtonDisabled() {
+const multiSensorBtn = document.getElementById('multi-sensor-btn');
+if (multiSensorBtn) {
+multiSensorBtn.style.opacity = '0.5';
+multiSensorBtn.style.pointerEvents = 'none';
+multiSensorBtn.title = 'No hay sensores ESP-NOW disponibles';
+}
+}
+
 function openMultiSensorDashboard() {
-console.log("🔗 Abriendo ESP-NOW Manager...");
-showToast("Abriendo gestión ESP-NOW", "info");
-window.open('/espnow-manager', '_blank');
+console.log("🔗 Abriendo ESP-NOW Dashboard...");
+showToast("Abriendo dashboard multi-sensor", "info");
+window.open('/espnow_dashboard', '_blank');
 }
 function showToast(message, type = 'info') {
 const toast = document.getElementById('toast');
