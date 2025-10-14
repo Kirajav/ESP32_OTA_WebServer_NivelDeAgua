@@ -13,8 +13,6 @@
 #include "SensorManager.h"
 #include "../lib/Config/ApplicationConfig.h"
 #include "ESPNowManager.h"
-#include "GoogleHomeIntegration.h"
-#include "AlexaIntegration.h"
 #include "TuyaIntegration.h"
 #include "TuyaDevice.h"
 #include "NTPTimeSync.h"
@@ -47,8 +45,6 @@ private:
     
     // IoT Integrations
     ESPNowManager* espNowManager;
-    GoogleHomeIntegration* googleHome;
-    AlexaIntegration* alexa;
     TuyaIntegration* tuya;
     TuyaDevice* tuyaDevice;
     NTPTimeSync* ntpSync;

@@ -23,8 +23,6 @@ AppManager::AppManager() {
     
     // Inicializar IoT integrations como nullptr
     espNowManager = nullptr;
-    googleHome = nullptr;
-    alexa = nullptr;
     tuya = nullptr;
     tuyaDevice = nullptr;
     ntpSync = nullptr;
@@ -135,18 +133,6 @@ void AppManager::initialize() {
             Serial.println("   ✨ Dispositivo listo para comunicación híbrida");
         }
     }
-    
-    // Google Home
-    googleHome = new GoogleHomeIntegration(&sensor_manager);
-    googleHome->init("smart-water-sensor", "esp32-main");
-    googleHome->setEnabled(true);
-    Serial.println("✅ Google Home listo");
-    
-    // Amazon Alexa  
-    alexa = new AlexaIntegration(&sensor_manager);
-    alexa->init("amzn1.ask.skill.water-sensor");
-    alexa->setEnabled(true);
-    Serial.println("✅ Alexa listo");
     
     // Tuya Smart (Legacy - para experimentos)
     tuya = new TuyaIntegration(&sensor_manager);
