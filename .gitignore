@@ -6,3 +6,8 @@
 Firmware_backup, 1a. versión_Sensor de nivel de agua (sin wifi management).bin
 SPIFFS_backup, 1a. versión_Sensor de nivel de agua (con wifi management).bin
 logs/
+
+# Archivos web minificados (auto-generados)
+data/web/**/*.min.js
+data/web/**/*.min.css
+data/web/**/*.min.html

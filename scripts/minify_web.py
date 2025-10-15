@@ -92,9 +92,10 @@ def minify_html(content):
     # Eliminar espacios al inicio/final
     return content.strip()
 
-def process_file(src_path, dst_path):
+def process_file(src_path):
     """
     Procesa un archivo según su extensión
+    Crea versión minificada con extensión .min.{ext}
     """
     try:
         with open(src_path, 'r', encoding='utf-8') as f:
@@ -103,29 +104,34 @@ def process_file(src_path, dst_path):
         original_size = len(content)
         ext = src_path.suffix.lower()
         
+        # Solo minificar JS, CSS y HTML
+        if ext not in ['.js', '.css', '.html']:
+            return original_size, original_size, False
+        
+        # Aplicar minificación según tipo
         if ext == '.js':
-            content = minify_js(content)
+            minified_content = minify_js(content)
         elif ext == '.css':
-            content = minify_css(content)
+            minified_content = minify_css(content)
         elif ext == '.html':
-            content = minify_html(content)
+            minified_content = minify_html(content)
         else:
-            # Copiar sin modificar
-            with open(dst_path, 'w', encoding='utf-8') as f:
-                f.write(content)
-            return original_size, original_size
+            return original_size, original_size, False
         
-        # Guardar archivo minificado
-        os.makedirs(dst_path.parent, exist_ok=True)
-        with open(dst_path, 'w', encoding='utf-8') as f:
-            f.write(content)
+        # Crear nombre para archivo minificado
+        # ejemplo.js -> ejemplo.min.js
+        min_path = src_path.parent / f"{src_path.stem}.min{src_path.suffix}"
         
-        final_size = len(content)
-        return original_size, final_size
+        # Guardar archivo minificado (NO sobrescribir original)
+        with open(min_path, 'w', encoding='utf-8') as f:
+            f.write(minified_content)
+        
+        final_size = len(minified_content)
+        return original_size, final_size, True
         
     except Exception as e:
         print(f"❌ Error procesando {src_path.name}: {e}")
-        return 0, 0
+        return 0, 0, False
 
 def minify_web_files():
     """
@@ -141,16 +147,19 @@ def minify_web_files():
     total_final = 0
     processed_files = 0
     
-    # Procesar todos los archivos web
+    # Procesar todos los archivos web (excluyendo ya minificados)
     for root, dirs, files in os.walk(DATA_WEB_DIR):
         for file in files:
+            # Saltar archivos ya minificados
+            if '.min.' in file:
+                continue
+                
             if file.endswith(('.js', '.css', '.html')):
                 src_path = Path(root) / file
-                dst_path = src_path  # Sobrescribir el mismo archivo
                 
-                orig_size, final_size = process_file(src_path, dst_path)
+                orig_size, final_size, processed = process_file(src_path)
                 
-                if orig_size > 0:
+                if processed:
                     total_original += orig_size
                     total_final += final_size
                     processed_files += 1
@@ -163,7 +172,9 @@ def minify_web_files():
         print(f"   Archivos procesados: {processed_files}")
         print(f"   Tamaño original: {total_original:,} bytes")
         print(f"   Tamaño final: {total_final:,} bytes")
-        print(f"   Reducción total: {total_reduction:.1f}%\n")
+        print(f"   Reducción total: {total_reduction:.1f}%")
+        print(f"   💡 Archivos originales preservados")
+        print(f"   💡 Versiones minificadas: *.min.js, *.min.css, *.min.html\n")
     else:
         print(f"⚠️  No se encontraron archivos para minificar\n")
 
