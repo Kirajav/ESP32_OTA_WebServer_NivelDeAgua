@@ -94,8 +94,8 @@ def minify_html(content):
 
 def process_file(src_path):
     """
-    Procesa un archivo según su extensión
-    Crea versión minificada con extensión .min.{ext}
+    Procesa un archivo desde /src y genera versión minificada en parent
+    Estructura: data/web/dashboard/src/dashboard.js → data/web/dashboard/dashboard.min.js
     """
     try:
         with open(src_path, 'r', encoding='utf-8') as f:
@@ -118,26 +118,30 @@ def process_file(src_path):
         else:
             return original_size, original_size, False
         
-        # Crear nombre para archivo minificado
-        # ejemplo.js -> ejemplo.min.js
-        min_path = src_path.parent / f"{src_path.stem}.min{src_path.suffix}"
+        # Guardar en directorio padre (fuera de /src)
+        # data/web/dashboard/src/dashboard.js → data/web/dashboard/dashboard.min.js
+        parent_dir = src_path.parent.parent
+        min_filename = f"{src_path.stem}.min{src_path.suffix}"
+        min_path = parent_dir / min_filename
         
-        # Guardar archivo minificado (NO sobrescribir original)
+        # Guardar archivo minificado en raíz del módulo web
         with open(min_path, 'w', encoding='utf-8') as f:
             f.write(minified_content)
         
         final_size = len(minified_content)
-        return original_size, final_size, True
+        return original_size, final_size, True, str(min_path.relative_to(DATA_WEB_DIR))
         
     except Exception as e:
         print(f"❌ Error procesando {src_path.name}: {e}")
-        return 0, 0, False
+        return 0, 0, False, ""
 
 def minify_web_files():
     """
-    Minifica todos los archivos web del proyecto
+    Minifica archivos desde carpetas /src hacia directorio padre
+    Estructura: data/web/{module}/src/*.{js,css,html} → data/web/{module}/*.min.{ext}
     """
     print("\n🔧 Iniciando minificación de archivos web...")
+    print("📂 Buscando archivos en carpetas /src...\n")
     
     if not DATA_WEB_DIR.exists():
         print(f"⚠️  Directorio {DATA_WEB_DIR} no encontrado")
@@ -147,36 +151,44 @@ def minify_web_files():
     total_final = 0
     processed_files = 0
     
-    # Procesar todos los archivos web (excluyendo ya minificados)
-    for root, dirs, files in os.walk(DATA_WEB_DIR):
-        for file in files:
-            # Saltar archivos ya minificados
-            if '.min.' in file:
-                continue
-                
-            if file.endswith(('.js', '.css', '.html')):
-                src_path = Path(root) / file
-                
-                orig_size, final_size, processed = process_file(src_path)
+    # Buscar carpetas /src dentro de data/web
+    src_dirs = list(DATA_WEB_DIR.rglob("src"))
+    
+    if not src_dirs:
+        print("⚠️  No se encontraron carpetas /src en data/web/")
+        return
+    
+    for src_dir in src_dirs:
+        module_name = src_dir.parent.name
+        print(f"📦 Procesando módulo: {module_name}")
+        
+        # Procesar archivos JS, CSS, HTML en carpeta /src
+        for file_path in src_dir.glob("*"):
+            if file_path.suffix.lower() in ['.js', '.css', '.html']:
+                orig_size, final_size, processed, output_path = process_file(file_path)
                 
                 if processed:
                     total_original += orig_size
                     total_final += final_size
                     processed_files += 1
                     reduction = ((orig_size - final_size) / orig_size * 100) if orig_size > 0 else 0
-                    print(f"  ✓ {file}: {orig_size:,} → {final_size:,} bytes ({reduction:.1f}% reducción)")
+                    print(f"  ✓ {file_path.name} → {output_path}")
+                    print(f"    {orig_size:,} → {final_size:,} bytes ({reduction:.1f}% reducción)")
+        
+        print()  # Línea en blanco entre módulos
     
     if processed_files > 0:
         total_reduction = ((total_original - total_final) / total_original * 100) if total_original > 0 else 0
-        print(f"\n✅ Minificación completada:")
-        print(f"   Archivos procesados: {processed_files}")
-        print(f"   Tamaño original: {total_original:,} bytes")
-        print(f"   Tamaño final: {total_final:,} bytes")
-        print(f"   Reducción total: {total_reduction:.1f}%")
-        print(f"   💡 Archivos originales preservados")
-        print(f"   💡 Versiones minificadas: *.min.js, *.min.css, *.min.html\n")
+        print(f"✅ Minificación completada:")
+        print(f"   📊 Archivos procesados: {processed_files}")
+        print(f"   📏 Tamaño original: {total_original:,} bytes ({total_original/1024:.1f} KB)")
+        print(f"   📉 Tamaño final: {total_final:,} bytes ({total_final/1024:.1f} KB)")
+        print(f"   💾 Reducción total: {total_reduction:.1f}% (~{(total_original-total_final)/1024:.1f} KB ahorrados)")
+        print(f"\n   💡 Archivos fuente: data/web/*/src/")
+        print(f"   💡 Archivos minificados: data/web/*/*.min.*")
+        print(f"   ✅ Listos para versionar en Git\n")
     else:
-        print(f"⚠️  No se encontraron archivos para minificar\n")
+        print(f"⚠️  No se encontraron archivos para minificar en carpetas /src\n")
 
 # Ejecutar minificación cuando se importa desde PlatformIO
 minify_web_files()
