@@ -64,6 +64,7 @@ private:
     void handleSensorData(AsyncWebServerRequest *request);
     void handleToggleDisplay(AsyncWebServerRequest *request);
     void updateSensorDisplay();       // Actualizar pantalla con datos del sensor
+    void updatePortalDisplay();       // Actualizar pantalla del portal cautivo
     void updateTuyaDeviceData();      // Actualizar datos Tuya Device
     bool detectFilling(float readings[], uint8_t threshold); // Detectar si el contenedor se está llenando
     void apCallback();

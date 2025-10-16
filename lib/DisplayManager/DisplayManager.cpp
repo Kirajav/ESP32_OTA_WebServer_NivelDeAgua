@@ -10,7 +10,9 @@ DisplayManager::DisplayManager() :
     _ledFadeActive(false), _lastFadeUpdate(0), _fadeDirection(1), _fadeValue(0), 
     _autoSleepTime(30), _lastActivity(0), _displaySleeping(false), _autoSleepEnabled(false),
     _countdownActive(false), _countdownSeconds(0), _countdownStart(0), 
-    _lastButtonState(HIGH), _lastButtonPress(0) {}
+    _lastButtonState(HIGH), _lastButtonPress(0),
+    _scrollText(""), _scrollX(0), _scrollY(0), _scrollMaxWidth(0), 
+    _scrollOffset(0), _lastScrollUpdate(0) {}
 
 void DisplayManager::begin() {
     // Configurar LED blanco
@@ -321,4 +323,91 @@ void DisplayManager::showSplashScreen() {
     Heltec.display->setFont(ArialMT_Plain_10);
     Heltec.display->drawString(64, 45, F("v2.0 - DataTech"));
     Heltec.display->display();
+}
+
+// Scroll horizontal para textos largos
+void DisplayManager::drawScrollingText(int x, int y, const String& text, int maxWidth) {
+    // Guardar parámetros para actualización
+    _scrollText = text;
+    _scrollX = x;
+    _scrollY = y;
+    _scrollMaxWidth = maxWidth;
+    
+    // Calcular ancho del texto
+    int textWidth = Heltec.display->getStringWidth(text);
+    
+    // Si cabe, mostrar normal
+    if (textWidth <= maxWidth) {
+        Heltec.display->drawString(x, y, text);
+        _scrollText = "";  // Desactivar scroll
+        return;
+    }
+    
+    // Texto muy largo - activar scroll
+    _scrollOffset = 0;
+    _lastScrollUpdate = millis();
+    
+    // Dibujar primera parte
+    String visibleText = text.substring(0);
+    int pos = 0;
+    while (pos < text.length() && Heltec.display->getStringWidth(text.substring(0, pos + 1)) < maxWidth) {
+        pos++;
+    }
+    visibleText = text.substring(0, pos);
+    Heltec.display->drawString(x, y, visibleText);
+}
+
+void DisplayManager::updateScrollingText() {
+    // Si no hay scroll activo, salir
+    if (_scrollText.length() == 0) return;
+    
+    unsigned long now = millis();
+    if (now - _lastScrollUpdate < SCROLL_SPEED_MS) return;
+    
+    _lastScrollUpdate = now;
+    _scrollOffset++;
+    
+    int textWidth = Heltec.display->getStringWidth(_scrollText);
+    
+    // Si llegamos al final, reiniciar
+    if (_scrollOffset > _scrollText.length()) {
+        _scrollOffset = 0;
+        delay(1000);  // Pausa al final antes de reiniciar
+    }
+    
+    // Calcular texto visible con offset
+    String rotatedText = _scrollText.substring(_scrollOffset) + " - " + _scrollText.substring(0, _scrollOffset);
+    
+    int pos = 0;
+    while (pos < rotatedText.length() && 
+           Heltec.display->getStringWidth(rotatedText.substring(0, pos + 1)) < _scrollMaxWidth) {
+        pos++;
+    }
+    
+    String visibleText = rotatedText.substring(0, pos);
+    
+    // Borrar área anterior y dibujar nuevo texto
+    Heltec.display->setColor(BLACK);
+    Heltec.display->fillRect(_scrollX, _scrollY, _scrollMaxWidth, 10);
+    Heltec.display->setColor(WHITE);
+    Heltec.display->drawString(_scrollX, _scrollY, visibleText);
+    Heltec.display->display();
+}
+
+// Métodos helper para actualización parcial
+void DisplayManager::fillRect(int x, int y, int width, int height, int color) {
+    if (color == 0) {
+        Heltec.display->setColor(BLACK);
+    } else {
+        Heltec.display->setColor(WHITE);
+    }
+    Heltec.display->fillRect(x, y, width, height);
+}
+
+void DisplayManager::setColor(int color) {
+    if (color == 0) {
+        Heltec.display->setColor(BLACK);
+    } else {
+        Heltec.display->setColor(WHITE);
+    }
 }

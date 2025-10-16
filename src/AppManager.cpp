@@ -2,6 +2,7 @@
 #include <DNSServer.h>
 #include <esp_task_wdt.h>
 #include <esp_system.h>
+#include <esp_wifi.h>
 #include <ArduinoJson.h>
 
 AsyncWebServer server(80);
@@ -1021,18 +1022,40 @@ void AppManager::apCallback() {
     Serial.println("AP IP: " + ap_ip);
     Serial.println("AP MAC: " + ap_mac);
     
-    // Mostrar en display con nueva información
-    display_manager.clear();
-    display_manager.setFont(ArialMT_Plain_10);
-    display_manager.drawString(0, 0, "PORTAL CAUTIVO");
-    display_manager.drawString(0, 12, "Red: " + ap_ssid); // Mostrar SSID completo en una línea
-    display_manager.drawString(0, 24, "Contraseña: " + ap_password);
-    display_manager.drawString(0, 36, "IP: " + ap_ip);
-    // MAC completa en una línea
-    display_manager.drawString(0, 48, "MAC: " + ap_mac); // MAC completa
-    display_manager.display();
+    updatePortalDisplay();
     
     Serial.println("Portal disponible en: http://" + ap_ip);
+}
+
+void AppManager::updatePortalDisplay() {
+    // Obtener información del AP
+    String ap_ssid = config_manager.getAPSSID();
+    String ap_password = config_manager.getAPPassword();
+    String ap_ip = WiFi.softAPIP().toString();
+    String ap_mac = WiFi.softAPmacAddress();
+    int numClients = WiFi.softAPgetStationNum();
+    
+    // Mostrar información en display
+    display_manager.clear();
+    display_manager.setFont(ArialMT_Plain_10);
+    display_manager.setTextAlignment(TEXT_ALIGN_LEFT);
+    
+    display_manager.drawString(0, 0, "PORTAL CAUTIVO");
+    display_manager.drawString(0, 12, "Red: " + ap_ssid);
+    display_manager.drawString(0, 24, "Pass: " + ap_password);
+    display_manager.drawString(0, 36, "IP: " + ap_ip);
+    display_manager.drawString(0, 48, "MAC: " + ap_mac);
+    
+    // Línea de clientes conectados con scroll si es necesario
+    String clientsInfo = "Clientes: " + String(numClients);
+    
+    // Nota: La estructura wifi_sta_info_t no proporciona IPs directamente
+    // Solo mostramos el número de clientes conectados
+    
+    // Usar scroll horizontal si el texto es muy largo
+    display_manager.drawScrollingText(0, 60, clientsInfo, 128);
+    
+    display_manager.display();
 }
 
 void AppManager::loop() {
@@ -1048,6 +1071,18 @@ void AppManager::loop() {
     
     // Procesar DNS requests para portal cautivo
     dnsServer.processNextRequest();
+    
+    // Actualizar scroll de texto en portal cautivo
+    if (portal_active) {
+        display_manager.updateScrollingText();
+        
+        // Actualizar clientes conectados cada 3 segundos
+        static unsigned long lastPortalUpdate = 0;
+        if (millis() - lastPortalUpdate > 3000) {
+            updatePortalDisplay();
+            lastPortalUpdate = millis();
+        }
+    }
     
     // Monitoreo de memoria cada 10 segundos
     static unsigned long lastMemCheck = 0;
@@ -1305,65 +1340,146 @@ void AppManager::updateSensorDisplay() {
     
     Serial.println("🖥️ Actualizando pantalla con datos del sensor");
     
-    display_manager.clear();
-    display_manager.setFont(ArialMT_Plain_10);
-    
-    // Línea 1: Título con rol ESP-NOW
-    String title = "SENSOR NIVEL AGUA";
-    if (config_manager.getESPNowConfig().isMaster()) {
-        title += " [M]";
-    } else if (config_manager.getESPNowConfig().isSlave()) {
-        title += " [S]";
-    }
-    display_manager.drawString(0, 0, title);
+    // Variables estáticas para almacenar valores anteriores
+    static float lastDistance = -999.0;
+    static float lastLitros = -999.0;
+    static int lastPercentage = -999;
+    static String lastStatus = "";
+    static bool firstRun = true;
     
     // Obtener datos REALES del sensor
     String sensorJson = sensor_manager.getSensorJson("WaterLevel");
-    if (sensorJson.indexOf("error") >= 0) {
-        // Mostrar error del sensor
-        display_manager.drawString(0, 12, "⚠️ SENSOR ERROR");
-        display_manager.drawString(0, 24, "Verificar conexión");
-        display_manager.drawString(0, 36, "Trig/Echo pins");
+    
+    // Si es primera ejecución o hay error, redibujar todo
+    if (firstRun || sensorJson.indexOf("error") >= 0) {
+        firstRun = false;
         
-        // Mostrar info de red en caso de error
-        if (WiFi.status() == WL_CONNECTED) {
-            display_manager.drawString(0, 48, "WiFi: " + WiFi.SSID());
-        } else {
-            display_manager.drawString(0, 48, "Sin WiFi");
+        display_manager.clear();
+        display_manager.setFont(ArialMT_Plain_10);
+        display_manager.setTextAlignment(TEXT_ALIGN_LEFT);
+        
+        // Línea 1: Título con rol ESP-NOW (estático)
+        String title = "SENSOR NIVEL AGUA";
+        if (config_manager.getESPNowConfig().isMaster()) {
+            title += " [M]";
+        } else if (config_manager.getESPNowConfig().isSlave()) {
+            title += " [S]";
         }
-    } else {
-        // Parsear datos reales del sensor
-        DynamicJsonDocument doc(256);
-        DeserializationError error = deserializeJson(doc, sensorJson);
+        display_manager.drawString(0, 0, title);
         
-        if (!error) {
-            float distance = doc["distancia"] | -1.0;
-            float litros = doc["litros"] | 0.0;
-            int percentage = doc["porcentaje"] | 0;
+        if (sensorJson.indexOf("error") >= 0) {
+            // Mostrar error del sensor
+            display_manager.drawString(0, 12, "⚠️ SENSOR ERROR");
+            display_manager.drawString(0, 24, "Verificar conexión");
+            display_manager.drawString(0, 36, "Trig/Echo pins");
             
-            // Línea 2: Datos del sensor
-            display_manager.drawString(0, 12, "Dist: " + String(distance, 1) + "cm");
-            display_manager.drawString(0, 24, "Agua: " + String(litros, 1) + "L");
-            display_manager.drawString(0, 36, "Lleno: " + String(percentage) + "%");
-            
-            // Línea 5: Estado + fecha/hora si está disponible
-            String statusLine = "";
-            if (ntpSync && ntpSync->isReady() && config_manager.getSensorConfig().getShowDateTime()) {
-                statusLine = ntpSync->getCompactDateTime(); // "27/09 14:30"
-            } else if (WiFi.status() == WL_CONNECTED) {
-                statusLine = "WiFi: OK";
+            // Mostrar info de red en caso de error
+            if (WiFi.status() == WL_CONNECTED) {
+                display_manager.drawString(0, 48, "WiFi: " + WiFi.SSID());
             } else {
-                statusLine = "Sin WiFi";
+                display_manager.drawString(0, 48, "Sin WiFi");
             }
-            display_manager.drawString(0, 48, statusLine);
-        } else {
-            // Error parseando JSON
-            display_manager.drawString(0, 12, "Error datos sensor");
-            display_manager.drawString(0, 24, "JSON inválido");
+            
+            display_manager.display();
+            
+            // Resetear valores para próxima actualización
+            lastDistance = -999.0;
+            lastLitros = -999.0;
+            lastPercentage = -999;
+            lastStatus = "";
+            return;
         }
+        
+        // Dibujar etiquetas estáticas
+        display_manager.drawString(0, 12, "Dist:");
+        display_manager.drawString(0, 24, "Agua:");
+        display_manager.drawString(0, 36, "Lleno:");
     }
     
-    display_manager.display();
+    // Parsear datos reales del sensor
+    DynamicJsonDocument doc(256);
+    DeserializationError error = deserializeJson(doc, sensorJson);
+    
+    if (!error) {
+        float distance = doc["distancia"] | -1.0;
+        float litros = doc["litros"] | 0.0;
+        int percentage = doc["porcentaje"] | 0;
+        
+        // Solo actualizar si cambió la distancia
+        if (distance != lastDistance) {
+            // Borrar solo el área del valor anterior (aprox 60 pixels)
+            display_manager.setColor(0);  // BLACK
+            display_manager.fillRect(36, 12, 92, 10, 0);
+            display_manager.setColor(1);  // WHITE
+            
+            // Dibujar nuevo valor
+            display_manager.drawString(36, 12, String(distance, 1) + " cm");
+            lastDistance = distance;
+        }
+        
+        // Solo actualizar si cambió litros
+        if (litros != lastLitros) {
+            // Borrar solo el área del valor anterior
+            display_manager.setColor(0);
+            display_manager.fillRect(36, 24, 92, 10, 0);
+            display_manager.setColor(1);
+            
+            // Dibujar nuevo valor
+            display_manager.drawString(36, 24, String(litros, 1) + " L");
+            lastLitros = litros;
+        }
+        
+        // Solo actualizar si cambió porcentaje
+        if (percentage != lastPercentage) {
+            // Borrar solo el área del valor anterior
+            display_manager.setColor(0);
+            display_manager.fillRect(42, 36, 86, 10, 0);
+            display_manager.setColor(1);
+            
+            // Dibujar nuevo valor
+            display_manager.drawString(42, 36, String(percentage) + " %");
+            lastPercentage = percentage;
+        }
+        
+        // Línea de estado (WiFi/fecha)
+        String statusLine = "";
+        if (ntpSync && ntpSync->isReady() && config_manager.getSensorConfig().getShowDateTime()) {
+            statusLine = ntpSync->getCompactDateTime(); // "27/09 14:30"
+        } else if (WiFi.status() == WL_CONNECTED) {
+            statusLine = "WiFi: OK";
+        } else {
+            statusLine = "Sin WiFi";
+        }
+        
+        // Solo actualizar línea de estado si cambió
+        if (statusLine != lastStatus) {
+            display_manager.setColor(0);
+            display_manager.fillRect(0, 48, 128, 16, 0);
+            display_manager.setColor(1);
+            
+            display_manager.drawString(0, 48, statusLine);
+            lastStatus = statusLine;
+        }
+        
+        // Actualizar display solo si hubo cambios
+        if (distance != lastDistance || litros != lastLitros || 
+            percentage != lastPercentage || statusLine != lastStatus) {
+            display_manager.display();
+        }
+    } else {
+        // Error parseando JSON - redibujar todo
+        firstRun = true;
+        display_manager.clear();
+        display_manager.setFont(ArialMT_Plain_10);
+        display_manager.drawString(0, 12, "Error datos sensor");
+        display_manager.drawString(0, 24, "JSON inválido");
+        display_manager.display();
+        
+        lastDistance = -999.0;
+        lastLitros = -999.0;
+        lastPercentage = -999;
+        lastStatus = "";
+    }
 }
 
 void AppManager::updateTuyaDeviceData() {

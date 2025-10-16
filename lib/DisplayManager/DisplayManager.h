@@ -37,6 +37,14 @@ public:
     void startFadeEffect();
     void stopFadeEffect();
     void updateFadeEffect();
+    
+    // Scroll horizontal para textos largos
+    void drawScrollingText(int x, int y, const String& text, int maxWidth);
+    void updateScrollingText();  // Llamar en loop() para animar
+    
+    // Métodos para actualización parcial del display
+    void fillRect(int x, int y, int width, int height, int color);  // color: 0=BLACK, 1=WHITE
+    void setColor(int color);  // 0=BLACK, 1=WHITE
 
 private:
     void showInitialMessage();
@@ -64,6 +72,15 @@ private:
     static const int PRG_BUTTON_PIN = 0;
     bool _lastButtonState;
     unsigned long _lastButtonPress;
+    
+    // Scroll horizontal variables
+    String _scrollText;
+    int _scrollX;
+    int _scrollY;
+    int _scrollMaxWidth;
+    int _scrollOffset;
+    unsigned long _lastScrollUpdate;
+    static const int SCROLL_SPEED_MS = 150;  // ms entre movimientos
 };
 
 #endif // DISPLAY_MANAGER_H
